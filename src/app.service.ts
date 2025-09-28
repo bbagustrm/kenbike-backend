@@ -8,6 +8,6 @@ export class AppService {
     this.logger.log('GetHello called');
     this.logger.warn('This is a warning');
     this.logger.error('This is an error');
-    return 'Setup Docker + Github Action';
+    return 'Hello World';
   }
 }
