@@ -33,4 +33,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: bbagustrm/kenbike-backend:latest
+          tags: |
+            bbagustrm/kenbike-backend:latest
+            bbagustrm/kenbike-backend:${{ github.sha }} 
