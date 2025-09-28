@@ -5,7 +5,7 @@ services:
     image: bbagustrm/kenbike-backend:latest
     container_name: kenbike-backend
     ports:
-      - "4000:3000"
+      - "3000:3000"
     env_file: .env
     depends_on:
       - db
