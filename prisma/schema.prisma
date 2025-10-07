@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,80 +10,95 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id            String       @id @default(uuid())
-  first_name    String       @db.VarChar(50)
-  last_name     String       @db.VarChar(50)
-  username      String       @unique @db.VarChar(30)
-  email         String       @unique @db.VarChar(100)
-  password      String?      @db.VarChar(255)
-  phone_number  String?      @db.VarChar(20)
-  country       String?      @db.VarChar(50)
-  address       String?      @db.VarChar(255)
-  profile_image String?      @db.VarChar(255)
-  role          Role         @default(USER)
-  is_verified   Boolean      @default(false)
-  provider      AuthProvider @default(EMAIL)
-  created_at    DateTime     @default(now())
-  updated_at    DateTime     @updatedAt
-
-  // Relasi
-  verificationTokens VerificationToken[]
-  refreshTokens      RefreshToken[]
-  passwordResets     PasswordReset[]
-  blacklistedTokens  BlacklistedToken[]
-}
-
-model VerificationToken {
-  id         String   @id @default(uuid())
-  token      String   @unique @db.VarChar(255)
-  user_id    String
-  user       User     @relation(fields: [user_id], references: [id])
-  expires_at DateTime
-  created_at DateTime @default(now())
-
-  @@index([user_id])
-}
-
-model RefreshToken {
-  id         String   @id @default(uuid())
-  token      String   @unique @db.VarChar(255)
-  user_id    String
-  user       User     @relation(fields: [user_id], references: [id])
-  expires_at DateTime
-  created_at DateTime @default(now())
-
-  @@index([user_id])
-}
-
-model BlacklistedToken {
-  id         String   @id @default(uuid())
-  token      String   @unique @db.VarChar(255)
-  user_id    String?
-  user       User?    @relation(fields: [user_id], references: [id])
-  expires_at DateTime
-  created_at DateTime @default(now())
-}
-
-model PasswordReset {
-  id         String   @id @default(uuid())
-  token      String   @unique @db.VarChar(255)
-  user_id    String
-  user       User     @relation(fields: [user_id], references: [id])
-  expires_at DateTime
-  used       Boolean  @default(false)
-  created_at DateTime @default(now())
-
-  @@index([user_id])
-}
-
+// Enum untuk Role
 enum Role {
   USER
   ADMIN
   OWNER
 }
 
-enum AuthProvider {
-  EMAIL
-  GOOGLE
+// Model User
+model User {
+  id              String    @id @default(uuid())
+  firstName       String    @map("first_name") @db.VarChar(50)
+  lastName        String    @map("last_name") @db.VarChar(50)
+  username        String    @unique @db.VarChar(30)
+  email           String    @unique @db.VarChar(255)
+  password        String    @db.VarChar(255)
+  phoneNumber     String?   @map("phone_number") @db.VarChar(20)
+  country         String?   @db.VarChar(50)
+  address         String?   @db.VarChar(255)
+  profileImage    String?   @map("profile_image") @db.VarChar(500)
+  role            Role      @default(USER)
+  isActive        Boolean   @default(true) @map("is_active")
+  suspendedAt     DateTime? @map("suspended_at")
+  suspendedReason String?   @map("suspended_reason") @db.Text
+  lastLogin       DateTime? @map("last_login")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at") // Soft delete
+
+  // Relations
+  refreshTokens     RefreshToken[]
+  passwordResets    PasswordReset[]
+  blacklistedTokens BlacklistedToken[]
+
+  @@index([email])
+  @@index([username])
+  @@index([role])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+// Model untuk menyimpan Refresh Token
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique @db.VarChar(500)
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relation
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// Model untuk menyimpan token yang di-blacklist (logout)
+model BlacklistedToken {
+  id        String   @id @default(uuid())
+  token     String   @unique @db.VarChar(500)
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relation
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([expiresAt])
+  @@map("blacklisted_tokens")
+}
+
+// Model untuk Password Reset Token
+model PasswordReset {
+  id        String    @id @default(uuid())
+  email     String    @db.VarChar(255)
+  token     String    @unique @db.VarChar(500)
+  userId    String    @map("user_id")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  // Relation
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("password_resets")
 }
