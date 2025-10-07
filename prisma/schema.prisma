@@ -14,9 +14,79 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String       @id @default(uuid())
+  first_name    String       @db.VarChar(50)
+  last_name     String       @db.VarChar(50)
+  username      String       @unique @db.VarChar(30)
+  email         String       @unique @db.VarChar(100)
+  password      String?      @db.VarChar(255)
+  phone_number  String?      @db.VarChar(20)
+  country       String?      @db.VarChar(50)
+  address       String?      @db.VarChar(255)
+  profile_image String?      @db.VarChar(255)
+  role          Role         @default(USER)
+  is_verified   Boolean      @default(false)
+  provider      AuthProvider @default(EMAIL)
+  created_at    DateTime     @default(now())
+  updated_at    DateTime     @updatedAt
+
+  // Relasi
+  verificationTokens VerificationToken[]
+  refreshTokens      RefreshToken[]
+  passwordResets     PasswordReset[]
+  blacklistedTokens  BlacklistedToken[]
+}
+
+model VerificationToken {
+  id         String   @id @default(uuid())
+  token      String   @unique @db.VarChar(255)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id])
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+  token      String   @unique @db.VarChar(255)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id])
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+}
+
+model BlacklistedToken {
+  id         String   @id @default(uuid())
+  token      String   @unique @db.VarChar(255)
+  user_id    String?
+  user       User?    @relation(fields: [user_id], references: [id])
+  expires_at DateTime
+  created_at DateTime @default(now())
+}
+
+model PasswordReset {
+  id         String   @id @default(uuid())
+  token      String   @unique @db.VarChar(255)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id])
+  expires_at DateTime
+  used       Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+}
+
+enum Role {
+  USER
+  ADMIN
+  OWNER
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
 }
