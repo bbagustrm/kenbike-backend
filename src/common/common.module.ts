@@ -4,6 +4,9 @@ import * as winston from 'winston';
 import {ConfigModule} from '@nestjs/config';
 import {ValidationService} from "./validation.service";
 import {PrismaService} from "./prisma.service";
+import appConfig from '../config/app.config';
+import jwtConfig from '../config/jwt.config';
+import databaseConfig from '../config/database.config';
 
 @Global()
 @Module({
@@ -14,6 +17,7 @@ import {PrismaService} from "./prisma.service";
         }),
         ConfigModule.forRoot({
             isGlobal: true,
+            load: [appConfig, jwtConfig, databaseConfig],
         }),
     ],
     providers: [PrismaService, ValidationService],

@@ -83,6 +83,7 @@ Registrasi akun baru untuk pelanggan (USER). Admin & Owner ditambahkan langsung 
   "username": "bagustrm",
   "email": "bagus@email.com",
   "phone_number": "+628123456789",
+  "country" : "Indonesia",
   "password": "SecurePass123!",
   "address": "Jl. Kenangan No. 10, Jakarta"
 }
@@ -94,6 +95,7 @@ Registrasi akun baru untuk pelanggan (USER). Admin & Owner ditambahkan langsung 
 - `username`: Required, unique, alphanumeric + underscore, min 3 karakter, max 30 karakter
 - `email`: Required, unique, valid email format
 - `phone_number`: Optional, valid international phone format
+- `country`: Optional, max 50 karakter
 - `password`: Required, must meet password requirements
 - `address`: Optional, max 255 karakter
 
@@ -553,6 +555,7 @@ Mengambil data user yang sedang login (berdasarkan JWT).
     "username": "bagus_dev",
     "email": "bagus@mail.com",
     "phone_number": "+628123456789",
+    "country": "Indonesia",
     "address": "Jl. Merdeka No. 1",
     "profile_image": "https://cdn.site.com/profile/bagus.jpg",
     "role": "USER",
@@ -797,6 +800,7 @@ GET /admin/users?page=1&limit=10&role=USER&search=bagus&sort_by=created_at&order
       "is_active": true,
       "profile_image": "https://cdn.site.com/profiles/u1.jpg",
       "phone_number": "+628123456789",
+      "country": "Indonesia",
       "provider": "email",
       "created_at": "2025-09-01T08:30:00.000Z"
     },
@@ -811,6 +815,7 @@ GET /admin/users?page=1&limit=10&role=USER&search=bagus&sort_by=created_at&order
       "is_active": true,
       "profile_image": null,
       "phone_number": "+628234567891",
+      "country": "Indonesia",
       "provider": "google",
       "created_at": "2025-09-15T10:20:00.000Z"
     }
@@ -848,6 +853,7 @@ GET /admin/users?page=1&limit=10&role=USER&search=bagus&sort_by=created_at&order
     "email": "bagus@mail.com",
     "phone_number": "+628123456789",
     "address": "Jl. Merdeka No. 1",
+    "country": "Indonesia",
     "profile_image": "https://cdn.site.com/profiles/bagus.jpg",
     "role": "USER",
     "is_verified": true,
@@ -888,6 +894,7 @@ Admin dapat membuat user baru dengan role apapun (USER, ADMIN, OWNER).
   "username": "newadmin",
   "email": "newadmin@store.com",
   "phone_number": "+628123456789",
+  "country": "Indonesia",
   "password": "SecurePass123!",
   "address": "Jl. Admin No. 1",
   "role": "ADMIN",
