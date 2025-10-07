@@ -12,9 +12,16 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /usr/src/app
 
-COPY --from=builder /usr/src/app/node_modules ./node_modules
+# Copy package files dan install production dependencies
+COPY package*.json ./
+RUN npm install --production
+
+# Copy prisma schema dan generate client di runtime stage
+COPY prisma ./prisma
+RUN npx prisma generate
+
+# Copy built files
 COPY --from=builder /usr/src/app/dist ./dist
-COPY --from=builder /usr/src/app/prisma ./prisma
 
 EXPOSE 3000
 CMD ["node", "dist/main.js"]
