@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import {Global, MiddlewareConsumer, Module, NestModule} from '@nestjs/common';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
 import { ConfigModule } from '@nestjs/config';
@@ -7,6 +7,7 @@ import { ValidationService } from './validation.service';
 import { PrismaService } from './prisma.service';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { ResponseInterceptor } from './interceptors/response.interceptor';
+import { BlacklistTokenMiddleware } from './middleware/blacklist-token.middleware';
 import appConfig from '../config/app.config';
 import jwtConfig from '../config/jwt.config';
 import databaseConfig from '../config/database.config';
@@ -39,4 +40,10 @@ import databaseConfig from '../config/database.config';
     ],
     exports: [PrismaService, ValidationService],
 })
-export class CommonModule {}
+export class CommonModule implements NestModule {
+    configure(consumer: MiddlewareConsumer) {
+        consumer
+            .apply(BlacklistTokenMiddleware)
+            .forRoutes('*'); // Apply to all routes
+    }
+}
