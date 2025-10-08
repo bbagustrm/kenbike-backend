@@ -1,27 +1,26 @@
-# ---- STAGE 1: Build ----
-FROM node:20-alpine AS builder
-WORKDIR /usr/src/app
+version: "3.8"
 
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npx prisma generate
-RUN npm run build
-  
-  # ---- STAGE 2: Run ----
-FROM node:20-alpine
-WORKDIR /usr/src/app
-  
-  # Copy package files dan install production dependencies
-COPY package*.json ./
-RUN npm install --production
-  
-  # Copy prisma schema dan generate client di runtime stage
-COPY prisma ./prisma
-RUN npx prisma generate
-  
-  # Copy built files
-COPY --from=builder /usr/src/app/dist ./dist
+services:
+  app:
+    image: bbagustrm/kenbike-backend:latest
+    container_name: kenbike-backend
+    ports:
+      - "3000:3000"
+    env_file: .env
+    depends_on:
+      - db
+    restart: always
+    command: sh -c "npx prisma migrate deploy && node dist/main.js"
 
-EXPOSE 3000
-CMD ["node", "dist/main.js"]
+  db:
+    image: postgres:15
+    container_name: kenbike-db
+    restart: always
+    env_file: .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
