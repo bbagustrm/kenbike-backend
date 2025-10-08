@@ -83,7 +83,7 @@ Registrasi akun baru untuk pelanggan (USER). Admin & Owner ditambahkan langsung 
   "username": "bagustrm",
   "email": "bagus@email.com",
   "phone_number": "+628123456789",
-  "country" : "Indonesia",
+  "country": "Indonesia",
   "password": "SecurePass123!",
   "address": "Jl. Kenangan No. 10, Jakarta"
 }
@@ -104,13 +104,12 @@ Registrasi akun baru untuk pelanggan (USER). Admin & Owner ditambahkan langsung 
 {
   "status": "success",
   "code": 201,
-  "message": "User registered successfully. Please check your email to verify your account.",
+  "message": "User registered successfully",
   "data": {
     "id": "7d17b5e2-ef13-4b9e-b318-5f55b21f53b9",
     "email": "bagus@email.com",
     "username": "bagustrm",
-    "role": "USER",
-    "is_verified": false
+    "role": "USER"
   }
 }
 ```
@@ -153,102 +152,7 @@ Registrasi akun baru untuk pelanggan (USER). Admin & Owner ditambahkan langsung 
 
 ---
 
-## 2. Verify Email
-
-> **POST** `/auth/verify-email`
-
-**Deskripsi:**
-Verifikasi email menggunakan token yang dikirim ke email setelah registrasi.
-
-**Request Body:**
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
-```
-
-**Response (200 OK)**
-```json
-{
-  "status": "success",
-  "code": 200,
-  "message": "Email verified successfully. You can now login."
-}
-```
-
-**Error (400 Bad Request)**
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Invalid or expired verification token"
-}
-```
-
-**Error (404 Not Found)**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "User not found"
-}
-```
-
----
-
-## 3. Resend Verification Email
-
-> **POST** `/auth/resend-verification`
-
-**Deskripsi:**
-Mengirim ulang email verifikasi jika token sebelumnya expired atau tidak diterima.
-
-**Request Body:**
-```json
-{
-  "email": "bagus@email.com"
-}
-```
-
-**Response (200 OK)**
-```json
-{
-  "status": "success",
-  "code": 200,
-  "message": "Verification email has been sent. Please check your inbox."
-}
-```
-
-**Error (404 Not Found)**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Email not found"
-}
-```
-
-**Error (422 Unprocessable Entity)**
-```json
-{
-  "status": "error",
-  "code": 422,
-  "message": "Email already verified"
-}
-```
-
-**Error (429 Too Many Requests)**
-```json
-{
-  "status": "error",
-  "code": 429,
-  "message": "Too many requests. Please try again in 5 minutes."
-}
-```
-
----
-
-## 4. Login (Email & Password)
+## 2. Login
 
 > **POST** `/auth/login`
 
@@ -278,8 +182,7 @@ Login dengan email dan password untuk semua role (USER, ADMIN, OWNER).
       "id": "7d17b5e2-ef13-4b9e-b318-5f55b21f53b9",
       "email": "admin@store.com",
       "username": "admin_store",
-      "role": "ADMIN",
-      "is_verified": true
+      "role": "ADMIN"
     }
   }
 }
@@ -294,15 +197,6 @@ Login dengan email dan password untuk semua role (USER, ADMIN, OWNER).
 }
 ```
 
-**Error (403 Forbidden)**
-```json
-{
-  "status": "error",
-  "code": 403,
-  "message": "Please verify your email before logging in"
-}
-```
-
 **Error (429 Too Many Requests)**
 ```json
 {
@@ -314,64 +208,7 @@ Login dengan email dan password untuk semua role (USER, ADMIN, OWNER).
 
 ---
 
-## 5. Login dengan Google OAuth
-
-> **GET** `/auth/google`
-
-**Deskripsi:**
-Redirect ke halaman login Google OAuth.
-
-**Response:**
-Redirect ke Google OAuth consent screen.
-
----
-
-> **GET** `/auth/google/callback`
-
-**Deskripsi:**
-Callback endpoint yang menerima data dari Google dan menghasilkan JWT token.
-
-**Response (200 OK)**
-```json
-{
-  "status": "success",
-  "code": 200,
-  "message": "Google login successful",
-  "data": {
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "token_type": "Bearer",
-    "expires_in": 900,
-    "user": {
-      "id": "7d17b5e2-ef13-4b9e-b318-5f55b21f53b9",
-      "email": "bagus@gmail.com",
-      "first_name": "Bagus",
-      "last_name": "Atmojo",
-      "profile_image": "https://lh3.googleusercontent.com/...",
-      "role": "USER",
-      "is_verified": true
-    }
-  }
-}
-```
-
-**Catatan:**
-- Login Google hanya untuk USER, bukan ADMIN atau OWNER
-- User yang login via Google otomatis terverifikasi (is_verified: true)
-- Jika email sudah terdaftar via email/password, sistem akan merge account
-
-**Error (400 Bad Request)**
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Google authentication failed"
-}
-```
-
----
-
-## 6. Refresh Token
+## 3. Refresh Token
 
 > **POST** `/auth/refresh`
 
@@ -410,7 +247,7 @@ Mendapatkan access token baru menggunakan refresh token yang valid.
 
 ---
 
-## 7. Forgot Password
+## 4. Forgot Password
 
 > **POST** `/auth/forgot-password`
 
@@ -448,7 +285,7 @@ Mengirim email berisi link/token untuk reset password.
 
 ---
 
-## 8. Reset Password
+## 5. Reset Password
 
 > **POST** `/auth/reset-password`
 
@@ -503,7 +340,7 @@ Reset password menggunakan token yang dikirim via email.
 
 ---
 
-## 9. Logout
+## 6. Logout
 
 > **POST** `/auth/logout`
 
@@ -534,7 +371,7 @@ Logout dan blacklist token saat ini. Token yang di-blacklist tidak bisa digunaka
 
 # **User Profile Endpoints**
 
-## 10. Get Current User (Profile)
+## 7. Get Current User (Profile)
 
 > **GET** `/auth/me`
 
@@ -559,8 +396,6 @@ Mengambil data user yang sedang login (berdasarkan JWT).
     "address": "Jl. Merdeka No. 1",
     "profile_image": "https://cdn.site.com/profile/bagus.jpg",
     "role": "USER",
-    "is_verified": true,
-    "provider": "email",
     "created_at": "2025-09-01T08:30:00.000Z",
     "updated_at": "2025-10-01T10:20:00.000Z"
   }
@@ -578,14 +413,14 @@ Mengambil data user yang sedang login (berdasarkan JWT).
 
 ---
 
-## 11. Update Profile
+## 8. Update Profile
 
 > **PATCH** `/auth/profile`
 
 **Authorization:** `Bearer <access_token>`
 
 **Deskripsi:**
-Update profile user. Field yang bisa diupdate: `profile_image`, `phone_number`, `address`.
+Update profile user. Field yang bisa diupdate: `profile_image`, `phone_number`, `address`, `country`.
 Tidak bisa mengubah `first_name`, `last_name`, `username`, `email`, atau `role`.
 
 **Request Body (multipart/form-data):**
@@ -593,6 +428,7 @@ Tidak bisa mengubah `first_name`, `last_name`, `username`, `email`, atau `role`.
 {
   "phone_number": "+628122333444",
   "address": "Jl. Baru No. 5, Bandung",
+  "country": "Indonesia",
   "profile_image": "<file>"
 }
 ```
@@ -607,6 +443,7 @@ Tidak bisa mengubah `first_name`, `last_name`, `username`, `email`, atau `role`.
     "id": "7d17b5e2-ef13-4b9e-b318-5f55b21f53b9",
     "phone_number": "+628122333444",
     "address": "Jl. Baru No. 5, Bandung",
+    "country": "Indonesia",
     "profile_image": "https://cdn.site.com/profile/bagus_new.jpg",
     "updated_at": "2025-10-06T14:30:00.000Z"
   }
@@ -634,7 +471,7 @@ Tidak bisa mengubah `first_name`, `last_name`, `username`, `email`, atau `role`.
 
 ---
 
-## 12. Update Password
+## 9. Update Password
 
 > **PATCH** `/auth/password`
 
@@ -691,38 +528,7 @@ Update password user yang sedang login.
 
 ---
 
-## 13. Update Address
-
-> **PATCH** `/auth/address`
-
-**Authorization:** `Bearer <access_token>`
-
-**Deskripsi:**
-Update alamat user.
-
-**Request Body:**
-```json
-{
-  "address": "Jl. Baru No. 2, Jakarta"
-}
-```
-
-**Response (200 OK)**
-```json
-{
-  "status": "success",
-  "code": 200,
-  "message": "Address updated successfully",
-  "data": {
-    "address": "Jl. Baru No. 2, Jakarta",
-    "updated_at": "2025-10-06T14:45:00.000Z"
-  }
-}
-```
-
----
-
-## 14. Delete Profile Image
+## 10. Delete Profile Image
 
 > **DELETE** `/auth/profile-image`
 
@@ -755,7 +561,7 @@ Menghapus foto profil user (set menjadi null/default).
 
 **Akses:** Hanya untuk role `ADMIN` dan `OWNER`
 
-## 15. Get All Users
+## 11. Get All Users
 
 > **GET** `/admin/users`
 
@@ -766,7 +572,6 @@ Menghapus foto profil user (set menjadi null/default).
 - `limit` (integer, default: 10, max: 100) - Jumlah data per halaman
 - `role` (string, optional) - Filter by role: USER, ADMIN, OWNER
 - `search` (string, optional) - Search by name, email, or username
-- `is_verified` (boolean, optional) - Filter by verification status
 - `sort_by` (string, default: created_at) - Sort by: created_at, email, username
 - `order` (string, default: desc) - Order: asc, desc
 
@@ -796,12 +601,10 @@ GET /admin/users?page=1&limit=10&role=USER&search=bagus&sort_by=created_at&order
       "first_name": "User",
       "last_name": "One",
       "role": "USER",
-      "is_verified": true,
       "is_active": true,
       "profile_image": "https://cdn.site.com/profiles/u1.jpg",
       "phone_number": "+628123456789",
       "country": "Indonesia",
-      "provider": "email",
       "created_at": "2025-09-01T08:30:00.000Z"
     },
     {
@@ -811,12 +614,10 @@ GET /admin/users?page=1&limit=10&role=USER&search=bagus&sort_by=created_at&order
       "first_name": "User",
       "last_name": "Two",
       "role": "USER",
-      "is_verified": false,
       "is_active": true,
       "profile_image": null,
       "phone_number": "+628234567891",
       "country": "Indonesia",
-      "provider": "google",
       "created_at": "2025-09-15T10:20:00.000Z"
     }
   ]
@@ -834,7 +635,7 @@ GET /admin/users?page=1&limit=10&role=USER&search=bagus&sort_by=created_at&order
 
 ---
 
-## 16. Get User Detail
+## 12. Get User Detail
 
 > **GET** `/admin/users/:id`
 
@@ -856,9 +657,7 @@ GET /admin/users?page=1&limit=10&role=USER&search=bagus&sort_by=created_at&order
     "country": "Indonesia",
     "profile_image": "https://cdn.site.com/profiles/bagus.jpg",
     "role": "USER",
-    "is_verified": true,
     "is_active": true,
-    "provider": "email",
     "last_login": "2025-10-06T10:30:00.000Z",
     "created_at": "2025-09-01T08:30:00.000Z",
     "updated_at": "2025-10-01T10:20:00.000Z"
@@ -877,7 +676,7 @@ GET /admin/users?page=1&limit=10&role=USER&search=bagus&sort_by=created_at&order
 
 ---
 
-## 18. Create User (Admin Only)
+## 13. Create User (Admin Only)
 
 > **POST** `/admin/users`
 
@@ -897,8 +696,7 @@ Admin dapat membuat user baru dengan role apapun (USER, ADMIN, OWNER).
   "country": "Indonesia",
   "password": "SecurePass123!",
   "address": "Jl. Admin No. 1",
-  "role": "ADMIN",
-  "is_verified": true
+  "role": "ADMIN"
 }
 ```
 
@@ -913,7 +711,6 @@ Admin dapat membuat user baru dengan role apapun (USER, ADMIN, OWNER).
     "email": "newadmin@store.com",
     "username": "newadmin",
     "role": "ADMIN",
-    "is_verified": true,
     "created_at": "2025-10-06T15:00:00.000Z"
   }
 }
@@ -930,14 +727,14 @@ Admin dapat membuat user baru dengan role apapun (USER, ADMIN, OWNER).
 
 ---
 
-## 19. Update User (Admin Only)
+## 14. Update User (Admin Only)
 
 > **PATCH** `/admin/users/:id`
 
 **Authorization:** `Bearer <access_token>`
 
 **Deskripsi:**
-Admin dapat mengupdate data user termasuk first_name, last_name, username, email, phone_number, address.
+Admin dapat mengupdate data user termasuk first_name, last_name, username, email, phone_number, address, country.
 
 **Request Body:**
 ```json
@@ -946,7 +743,8 @@ Admin dapat mengupdate data user termasuk first_name, last_name, username, email
   "last_name": "Name",
   "email": "updated@email.com",
   "phone_number": "+628999888777",
-  "address": "Jl. Updated No. 99"
+  "address": "Jl. Updated No. 99",
+  "country": "Indonesia"
 }
 ```
 
@@ -963,6 +761,7 @@ Admin dapat mengupdate data user termasuk first_name, last_name, username, email
     "email": "updated@email.com",
     "phone_number": "+628999888777",
     "address": "Jl. Updated No. 99",
+    "country": "Indonesia",
     "updated_at": "2025-10-06T15:30:00.000Z"
   }
 }
@@ -979,7 +778,7 @@ Admin dapat mengupdate data user termasuk first_name, last_name, username, email
 
 ---
 
-## 20. Change User Role (Admin Only)
+## 15. Change User Role (Admin Only)
 
 > **PATCH** `/admin/users/:id/role`
 
@@ -1027,7 +826,7 @@ Mengubah role user (USER ↔ ADMIN ↔ OWNER).
 
 ---
 
-## 21. Change User Status (Admin Only)
+## 16. Change User Status (Admin Only)
 
 > **PATCH** `/admin/users/:id/status`
 
@@ -1067,7 +866,7 @@ Mengubah status aktif user (suspend/activate). User yang di-suspend tidak bisa l
 
 ---
 
-## 22. Delete User (Admin Only)
+## 17. Delete User (Admin Only)
 
 > **DELETE** `/admin/users/:id`
 
@@ -1120,7 +919,7 @@ DELETE /admin/users/7d17b5e2-ef13-4b9e-b318-5f55b21f53b9?permanent=true
 
 ---
 
-## 23. Force Logout User (Admin Only)
+## 18. Force Logout User (Admin Only)
 
 > **POST** `/admin/users/:id/force-logout`
 
@@ -1135,5 +934,14 @@ Memaksa logout user tertentu dari semua device dengan me-revoke semua token mere
   "status": "success",
   "code": 200,
   "message": "User has been logged out from all devices"
+}
+```
+
+**Error (404 Not Found)**
+```json
+{
+  "status": "error",
+  "code": 404,
+  "message": "User not found"
 }
 ```
