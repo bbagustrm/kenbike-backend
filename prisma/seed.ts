@@ -1,32 +1,60 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { seedConfig } from './seed-config';
 
 const prisma = new PrismaClient();
 
 async function main() {
-    const hashedPassword = await bcrypt.hash('Admin123!', 10);
+    console.log('🌱 Starting database seed...');
 
-    await prisma.user.upsert({
-        where: { email: 'admin@store.com' },
+    // Seed Admin
+    const adminPassword = await bcrypt.hash(seedConfig.admin.password, 10);
+    const admin = await prisma.user.upsert({
+        where: { email: seedConfig.admin.email },
         update: {},
         create: {
-            firstName: 'Admin',
-            lastName: 'Store',
-            username: 'admin_store',
-            email: 'admin@store.com',
-            password: hashedPassword,
+            ...seedConfig.admin,
+            password: adminPassword,
             role: 'ADMIN',
-            phoneNumber: '+628123456789',
-            country: 'Indonesia',
+            isActive: true,
         },
     });
+    console.log('✅ Admin created:', admin.email);
 
-    console.log('✅ Admin user created');
+    // Seed Owner
+    const ownerPassword = await bcrypt.hash(seedConfig.owner.password, 10);
+    const owner = await prisma.user.upsert({
+        where: { email: seedConfig.owner.email },
+        update: {},
+        create: {
+            ...seedConfig.owner,
+            password: ownerPassword,
+            role: 'OWNER',
+            isActive: true,
+        },
+    });
+    console.log('✅ Owner created:', owner.email);
+
+    // Seed User
+    const userPassword = await bcrypt.hash(seedConfig.user.password, 10);
+    const user = await prisma.user.upsert({
+        where: { email: seedConfig.user.email },
+        update: {},
+        create: {
+            ...seedConfig.user,
+            password: userPassword,
+            role: 'USER',
+            isActive: true,
+        },
+    });
+    console.log('✅ User created:', user.email);
+
+    console.log('🎉 Seed completed!');
 }
 
 main()
     .catch((e) => {
-        console.error(e);
+        console.error('❌ Seed error:', e);
         process.exit(1);
     })
     .finally(async () => {
