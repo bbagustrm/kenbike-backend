@@ -12,13 +12,16 @@ async function bootstrap() {
   app.use(helmet());
 
   app.enableCors({
-    origin: "*",
+    origin: '*',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
 
+  // Set global prefix untuk semua routes
+  app.setGlobalPrefix('api');
+
   await app.listen(3000);
-  logger.log('info', '🚀 Server running on http://localhost:3000');
+  logger.log('info', '🚀 Server running on http://localhost:3000/api');
 }
 
 bootstrap();
