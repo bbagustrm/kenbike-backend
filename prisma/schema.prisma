@@ -42,6 +42,7 @@ model User {
   refreshTokens     RefreshToken[]
   passwordResets    PasswordReset[]
   blacklistedTokens BlacklistedToken[]
+  review            Review[]
 
   @@index([email])
   @@index([username])
@@ -101,4 +102,198 @@ model PasswordReset {
   @@index([token])
   @@index([expiresAt])
   @@map("password_resets")
+}
+
+// Model Product (update)
+model Product {
+  id            String  @id @default(uuid())
+  name          String
+  slug          String  @unique // SEO-friendly URL
+  idDescription String? @map("id_description") @db.Text
+  enDescription String? @map("en_description") @db.Text
+  idPrice       Int     @map("id_price")
+  enPrice       Int     @map("en_price")
+  imageUrl      String? @map("image_url") // highlight / thumbnail image
+
+  // 📊 Hybrid analytics fields
+  totalSold Int    @default(0) @map("total_sold")
+  totalView Int    @default(0) @map("total_view")
+  avgRating Float? @default(0.0) @map("avg_rating")
+
+  // 📦 Informasi pengiriman (buat integrasi Biteship)
+  weight Int? // gram
+  height Int? // cm
+  length Int? // cm
+  width  Int? // cm
+
+  // 💰 Tax & Pricing
+  taxRate Float? @default(0.0) @map("tax_rate") // e.g. 0.11 for 11% PPN
+
+  // 🔗 Relationships
+  categoryId String?   @map("category_id")
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  promotionId String?    @map("promotion_id")
+  promotion   Promotion? @relation(fields: [promotionId], references: [id])
+
+  tags     ProductTag[]
+  reviews  Review[]
+  variants ProductVariant[]
+
+  // ⚙️ Status & Features
+  isActive     Boolean   @default(true) @map("is_active")
+  isFeatured   Boolean   @default(false) @map("is_featured") // Show on homepage
+  isPreOrder   Boolean   @default(false) @map("is_pre_order")
+  preOrderDays Int?      @default(0) @map("pre_order_days") // Berapa hari pre-order
+  deletedAt    DateTime? @map("deleted_at") // Soft delete
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([categoryId])
+  @@index([promotionId])
+  @@index([slug])
+  @@index([isActive])
+  @@index([isFeatured])
+  @@index([deletedAt])
+  @@map("products")
+}
+
+// Model ProductVariant
+model ProductVariant {
+  id          String @id @default(uuid())
+  productId   String @map("product_id")
+  variantName String @map("variant_name") // misal: "Black L", "White XL"
+  sku         String @unique
+  stock       Int    @default(0) @map("stock")
+
+  product Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  images  ProductVariantImage[]
+
+  // ⚙️ Status
+  isActive  Boolean   @default(true) @map("is_active")
+  deletedAt DateTime? @map("deleted_at") // Soft delete
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([productId])
+  @@index([sku])
+  @@index([isActive])
+  @@map("product_variants")
+}
+
+// Model ProductVariantImage (update)
+model ProductVariantImage {
+  id        String @id @default(uuid())
+  variantId String @map("variant_id")
+  imageUrl  String @map("image_url")
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([variantId])
+  @@map("product_variant_images")
+}
+
+// Model Category
+model Category {
+  id        String    @id @default(uuid())
+  name      String
+  slug      String    @unique // SEO-friendly URL
+  isActive  Boolean   @default(true) @map("is_active")
+  products  Product[]
+  deletedAt DateTime? @map("deleted_at") // Soft delete
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([slug])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("categories")
+}
+
+// Model Promotion
+model Promotion {
+  id        String    @id @default(uuid())
+  name      String
+  discount  Float // e.g. 0.15 for 15% off
+  startDate DateTime  @map("start_date")
+  endDate   DateTime  @map("end_date")
+  isActive  Boolean   @default(true) @map("is_active")
+  products  Product[]
+  deletedAt DateTime? @map("deleted_at") // Soft delete
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([startDate, endDate])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("promotions")
+}
+
+// Model Tag (update)
+model Tag {
+  id        String       @id @default(uuid())
+  name      String       @unique
+  slug      String       @unique // SEO-friendly URL
+  isActive  Boolean      @default(true) @map("is_active")
+  products  ProductTag[]
+  deletedAt DateTime?    @map("deleted_at") // Soft delete
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([slug])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("tags")
+}
+
+// Junction Table: Product <-> Tag (Many-to-Many)
+model ProductTag {
+  productId String
+  tagId     String
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([productId, tagId])
+  @@index([productId])
+  @@index([tagId])
+  @@map("product_tags")
+}
+
+// Model Review (update)
+model Review {
+  id        String        @id @default(uuid())
+  userId    String        @map("user_id")
+  productId String        @map("product_id")
+  rating    Int           @default(0) // 1-5
+  comment   String?       @db.Text
+  images    ReviewImage[] // Ubah dari String[] ke relasi ke ReviewImage
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([productId])
+  @@index([userId])
+  @@index([rating])
+  @@map("reviews")
+}
+
+// Model ReviewImage (tambahkan)
+model ReviewImage {
+  id       String @id @default(uuid())
+  reviewId String @map("review_id")
+  imageUrl String @map("image_url")
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@map("review_images")
 }
