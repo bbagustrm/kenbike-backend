@@ -18,10 +18,10 @@ async function bootstrap() {
   });
 
   // Set global prefix untuk semua routes
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api/v1');
 
   await app.listen(3000);
-  logger.log('info', '🚀 Server running on http://localhost:3000/api');
+  logger.log('info', '🚀 Server running on http://localhost:3000/api/v1');
 }
 
 bootstrap();
