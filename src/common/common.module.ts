@@ -11,6 +11,8 @@ import { BlacklistTokenMiddleware } from './middleware/blacklist-token.middlewar
 import appConfig from '../config/app.config';
 import jwtConfig from '../config/jwt.config';
 import databaseConfig from '../config/database.config';
+import supabaseConfig from "../config/supabase.config";
+import { SupabaseModule } from './supabase/supabase.module';
 
 @Global()
 @Module({
@@ -21,8 +23,9 @@ import databaseConfig from '../config/database.config';
         }),
         ConfigModule.forRoot({
             isGlobal: true,
-            load: [appConfig, jwtConfig, databaseConfig],
+            load: [appConfig, jwtConfig, databaseConfig, supabaseConfig],
         }),
+        SupabaseModule,
     ],
     providers: [
         PrismaService,
