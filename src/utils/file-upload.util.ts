@@ -1,6 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
 import { extname } from 'path';
-import { v4 as uuidv4 } from 'uuid';
 
 export class FileUploadUtil {
     /**
@@ -42,15 +41,6 @@ export class FileUploadUtil {
     }
 
     /**
-     * Generate unique filename
-     */
-    static generateFileName(originalName: string): string {
-        const fileExtension = extname(originalName);
-        const uniqueName = `${uuidv4()}${fileExtension}`;
-        return uniqueName;
-    }
-
-    /**
      * Get file filter for multer
      */
     static imageFileFilter = (req: any, file: Express.Multer.File, callback: any) => {
@@ -65,4 +55,15 @@ export class FileUploadUtil {
 
         callback(null, true);
     };
+
+    /**
+     * Validate multiple files
+     */
+    static validateMultipleFiles(files: Express.Multer.File[], maxFiles: number = 5): void {
+        if (files.length > maxFiles) {
+            throw new BadRequestException(`Maximum ${maxFiles} files allowed`);
+        }
+
+        files.forEach((file) => this.validateImageFile(file));
+    }
 }

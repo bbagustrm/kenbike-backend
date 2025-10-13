@@ -1,5 +1,74 @@
 # 🛍️ Product Management API Documentation
 
+**Version:** 1.0.0  
+**Last Updated:** January 16, 2025  
+**Base URL:** `http://localhost:3000/api`
+
+---
+
+## **Table of Contents**
+- [Authentication](#authentication)
+- [Public API - Products](#public-api---products)
+- [Public API - Categories](#public-api---categories)
+- [Public API - Tags](#public-api---tags)
+- [Public API - Promotions](#public-api---promotions)
+- [Protected API - Reviews](#protected-api---reviews)
+- [Admin API - Products](#admin-api---products)
+- [Admin API - Categories](#admin-api---categories)
+- [Admin API - Tags](#admin-api---tags)
+- [Admin API - Promotions](#admin-api---promotions)
+- [Admin API - Reviews](#admin-api---reviews)
+- [Admin API - Statistics](#admin-api---statistics)
+
+---
+
+## **Authentication**
+
+### **Public Endpoints** (No Auth Required)
+- Product listings, details
+- Categories, Tags, Promotions
+- Active promotions
+
+### **Protected Endpoints** (Require User Auth)
+- User reviews (POST, PATCH, DELETE)
+
+### **Admin Endpoints** (Require Admin/Owner Role)
+- All `/admin/*` endpoints
+
+**Authorization Header:**
+```
+Authorization: Bearer <access_token>
+```
+
+---
+
+## **Standard Response Format**
+
+### **Success Response**
+```json
+{
+  "status": "success",
+  "code": 200,
+  "message": "Optional message",
+  "data": {  },
+  "meta": {  }
+}
+```
+
+### **Error Response**
+```json
+{
+  "status": "error",
+  "code": 400,
+  "message": "Error message",
+  "errors": [
+    {
+      "field": "field_name",
+      "message": "Error description"
+    }
+  ]
+}
+```
 
 ---
 
@@ -13,24 +82,19 @@
 Get list of all active products with filtering, sorting, and pagination.
 
 **Query Parameters:**
-- `page` (integer, default: 1) - Page number
-- `limit` (integer, default: 20, max: 100) - Items per page
-- `search` (string) - Search by product name or description
-- `categoryId` (string) - Filter by category ID
-- `categorySlug` (string) - Filter by category slug
-- `tagId` (string) - Filter by tag ID
-- `tagSlug` (string) - Filter by tag slug
-- `minPrice` (integer) - Minimum price filter
-- `maxPrice` (integer) - Maximum price filter
-- `isFeatured` (boolean) - Filter featured products
-- `isPreOrder` (boolean) - Filter pre-order products
-- `sortBy` (string) - Sort by: `name`, `idPrice`, `enPrice`, `totalSold`, `totalView`, `avgRating`, `createdAt`
-- `order` (string) - Order: `asc`, `desc` (default: `desc`)
-
-**Example Request:**
-```http
-GET /products?page=1&limit=20&categorySlug=electronics&minPrice=1000000&maxPrice=5000000&sortBy=totalSold&order=desc
-```
+- `page` (integer, default: 1)
+- `limit` (integer, default: 20, max: 100)
+- `search` (string) - Search by name or description
+- `categoryId` (string)
+- `categorySlug` (string)
+- `tagId` (string)
+- `tagSlug` (string)
+- `minPrice` (integer)
+- `maxPrice` (integer)
+- `isFeatured` (boolean)
+- `isPreOrder` (boolean)
+- `sortBy` (string) - `name`, `idPrice`, `totalSold`, `avgRating`, `createdAt`
+- `order` (string) - `asc`, `desc`
 
 **Response (200 OK):**
 ```json
@@ -50,16 +114,12 @@ GET /products?page=1&limit=20&categorySlug=electronics&minPrice=1000000&maxPrice
       "id": "uuid-1",
       "name": "MacBook Pro M3",
       "slug": "macbook-pro-m3",
-      "idDescription": "Laptop powerful untuk profesional",
-      "enDescription": "Powerful laptop for professionals",
       "idPrice": 25000000,
       "enPrice": 1700,
       "imageUrl": "https://cdn.store.com/products/macbook.jpg",
       "totalSold": 150,
       "totalView": 5420,
       "avgRating": 4.8,
-      "weight": 1600,
-      "taxRate": 0.11,
       "isFeatured": true,
       "isPreOrder": false,
       "category": {
@@ -67,27 +127,13 @@ GET /products?page=1&limit=20&categorySlug=electronics&minPrice=1000000&maxPrice
         "name": "Electronics",
         "slug": "electronics"
       },
-      "promotion": {
-        "id": "promo-1",
-        "name": "New Year Sale",
-        "discount": 0.15
-      },
       "tags": [
         {
           "id": "tag-1",
           "name": "Trending",
           "slug": "trending"
         }
-      ],
-      "variants": [
-        {
-          "id": "var-1",
-          "variantName": "Space Gray 512GB",
-          "sku": "MBP-M3-SG-512",
-          "stock": 10
-        }
-      ],
-      "createdAt": "2025-01-01T10:00:00.000Z"
+      ]
     }
   ]
 }
@@ -99,16 +145,8 @@ GET /products?page=1&limit=20&categorySlug=electronics&minPrice=1000000&maxPrice
 
 > **GET** `/products/:slug`
 
-**Description:**
-Get detailed information of a product by slug (SEO-friendly).
-
 **Path Parameters:**
-- `slug` (string, required) - Product slug
-
-**Example Request:**
-```http
-GET /products/macbook-pro-m3
-```
+- `slug` (string, required)
 
 **Response (200 OK):**
 ```json
@@ -152,11 +190,6 @@ GET /products/macbook-pro-m3
         "id": "tag-1",
         "name": "Trending",
         "slug": "trending"
-      },
-      {
-        "id": "tag-2",
-        "name": "Premium",
-        "slug": "premium"
       }
     ],
     "variants": [
@@ -165,22 +198,11 @@ GET /products/macbook-pro-m3
         "variantName": "Space Gray 512GB",
         "sku": "MBP-M3-SG-512",
         "stock": 10,
+        "isActive": true,
         "images": [
           {
             "id": "img-1",
             "imageUrl": "https://cdn.store.com/variants/mbp-sg-1.jpg"
-          }
-        ]
-      },
-      {
-        "id": "var-2",
-        "variantName": "Silver 1TB",
-        "sku": "MBP-M3-SV-1TB",
-        "stock": 5,
-        "images": [
-          {
-            "id": "img-2",
-            "imageUrl": "https://cdn.store.com/variants/mbp-sv-1.jpg"
           }
         ]
       }
@@ -192,7 +214,10 @@ GET /products/macbook-pro-m3
         "rating": 5,
         "comment": "Excellent product!",
         "images": [
-          "https://cdn.store.com/reviews/rev-1-img-1.jpg"
+          {
+            "id": "rev-img-1",
+            "imageUrl": "https://cdn.store.com/reviews/rev-1-img-1.jpg"
+          }
         ],
         "createdAt": "2025-01-10T14:30:00.000Z"
       }
@@ -203,31 +228,14 @@ GET /products/macbook-pro-m3
 }
 ```
 
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Product not found"
-}
-```
-
 ---
 
 ## 3. Get Featured Products
 
 > **GET** `/products/featured`
 
-**Description:**
-Get list of featured products (for homepage banner/carousel).
-
 **Query Parameters:**
-- `limit` (integer, default: 10) - Number of products to return
-
-**Example Request:**
-```http
-GET /products/featured?limit=10
-```
+- `limit` (integer, default: 10)
 
 **Response (200 OK):**
 ```json
@@ -240,10 +248,8 @@ GET /products/featured?limit=10
       "name": "MacBook Pro M3",
       "slug": "macbook-pro-m3",
       "idPrice": 25000000,
-      "enPrice": 1700,
       "imageUrl": "https://cdn.store.com/products/macbook.jpg",
-      "avgRating": 4.8,
-      "totalSold": 150
+      "avgRating": 4.8
     }
   ]
 }
@@ -255,17 +261,9 @@ GET /products/featured?limit=10
 
 > **GET** `/products/best-sellers`
 
-**Description:**
-Get list of best-selling products sorted by total sold.
-
 **Query Parameters:**
-- `limit` (integer, default: 10) - Number of products to return
-- `categorySlug` (string) - Filter by category
-
-**Example Request:**
-```http
-GET /products/best-sellers?limit=10&categorySlug=electronics
-```
+- `limit` (integer, default: 10)
+- `categorySlug` (string)
 
 **Response (200 OK):**
 ```json
@@ -278,7 +276,6 @@ GET /products/best-sellers?limit=10&categorySlug=electronics
       "name": "MacBook Pro M3",
       "slug": "macbook-pro-m3",
       "idPrice": 25000000,
-      "enPrice": 1700,
       "imageUrl": "https://cdn.store.com/products/macbook.jpg",
       "totalSold": 150,
       "avgRating": 4.8
@@ -293,17 +290,9 @@ GET /products/best-sellers?limit=10&categorySlug=electronics
 
 > **GET** `/products/trending`
 
-**Description:**
-Get list of trending products based on views and ratings.
-
 **Query Parameters:**
-- `limit` (integer, default: 10) - Number of products to return
-- `days` (integer, default: 7) - Calculate trending for last N days
-
-**Example Request:**
-```http
-GET /products/trending?limit=10&days=7
-```
+- `limit` (integer, default: 10)
+- `days` (integer, default: 7)
 
 **Response (200 OK):**
 ```json
@@ -316,7 +305,6 @@ GET /products/trending?limit=10&days=7
       "name": "iPhone 15 Pro",
       "slug": "iphone-15-pro",
       "idPrice": 18000000,
-      "enPrice": 1200,
       "imageUrl": "https://cdn.store.com/products/iphone.jpg",
       "totalView": 12450,
       "avgRating": 4.9,
@@ -334,17 +322,6 @@ GET /products/trending?limit=10&days=7
 
 > **GET** `/categories`
 
-**Description:**
-Get list of all active categories.
-
-**Query Parameters:**
-- `isActive` (boolean) - Filter by active status (default: true)
-
-**Example Request:**
-```http
-GET /categories?isActive=true
-```
-
 **Response (200 OK):**
 ```json
 {
@@ -357,13 +334,6 @@ GET /categories?isActive=true
       "slug": "electronics",
       "productCount": 45,
       "createdAt": "2025-01-01T00:00:00.000Z"
-    },
-    {
-      "id": "cat-2",
-      "name": "Fashion",
-      "slug": "fashion",
-      "productCount": 120,
-      "createdAt": "2025-01-01T00:00:00.000Z"
     }
   ]
 }
@@ -374,17 +344,6 @@ GET /categories?isActive=true
 ## 7. Get Category Detail
 
 > **GET** `/categories/:slug`
-
-**Description:**
-Get category detail by slug.
-
-**Path Parameters:**
-- `slug` (string, required) - Category slug
-
-**Example Request:**
-```http
-GET /categories/electronics
-```
 
 **Response (200 OK):**
 ```json
@@ -397,18 +356,8 @@ GET /categories/electronics
     "slug": "electronics",
     "isActive": true,
     "productCount": 45,
-    "createdAt": "2025-01-01T00:00:00.000Z",
-    "updatedAt": "2025-01-10T00:00:00.000Z"
+    "createdAt": "2025-01-01T00:00:00.000Z"
   }
-}
-```
-
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Category not found"
 }
 ```
 
@@ -418,25 +367,9 @@ GET /categories/electronics
 
 > **GET** `/categories/:slug/products`
 
-**Description:**
-Get all products in a specific category.
+**Query Parameters:** Same as Get All Products
 
-**Path Parameters:**
-- `slug` (string, required) - Category slug
-
-**Query Parameters:**
-- `page` (integer, default: 1)
-- `limit` (integer, default: 20)
-- `sortBy` (string) - Same as product list
-- `order` (string) - `asc` or `desc`
-
-**Example Request:**
-```http
-GET /categories/electronics/products?page=1&limit=20&sortBy=totalSold&order=desc
-```
-
-**Response (200 OK):**
-Same format as Get All Products
+**Response:** Same format as Get All Products
 
 ---
 
@@ -445,14 +378,6 @@ Same format as Get All Products
 ## 9. Get All Tags
 
 > **GET** `/tags`
-
-**Description:**
-Get list of all active tags.
-
-**Example Request:**
-```http
-GET /tags
-```
 
 **Response (200 OK):**
 ```json
@@ -465,12 +390,6 @@ GET /tags
       "name": "Trending",
       "slug": "trending",
       "productCount": 25
-    },
-    {
-      "id": "tag-2",
-      "name": "Premium",
-      "slug": "premium",
-      "productCount": 15
     }
   ]
 }
@@ -482,17 +401,6 @@ GET /tags
 
 > **GET** `/tags/:slug`
 
-**Description:**
-Get tag detail by slug.
-
-**Path Parameters:**
-- `slug` (string, required) - Tag slug
-
-**Example Request:**
-```http
-GET /tags/trending
-```
-
 **Response (200 OK):**
 ```json
 {
@@ -502,19 +410,8 @@ GET /tags/trending
     "id": "tag-1",
     "name": "Trending",
     "slug": "trending",
-    "isActive": true,
-    "productCount": 25,
-    "createdAt": "2025-01-01T00:00:00.000Z"
+    "productCount": 25
   }
-}
-```
-
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Tag not found"
 }
 ```
 
@@ -524,22 +421,9 @@ GET /tags/trending
 
 > **GET** `/tags/:slug/products`
 
-**Description:**
-Get all products with a specific tag.
+**Query Parameters:** Same as Get All Products
 
-**Path Parameters:**
-- `slug` (string, required) - Tag slug
-
-**Query Parameters:**
-Same as product list
-
-**Example Request:**
-```http
-GET /tags/trending/products?page=1&limit=20
-```
-
-**Response (200 OK):**
-Same format as Get All Products
+**Response:** Same format as Get All Products
 
 ---
 
@@ -548,14 +432,6 @@ Same format as Get All Products
 ## 12. Get Active Promotions
 
 > **GET** `/promotions/active`
-
-**Description:**
-Get list of currently active promotions.
-
-**Example Request:**
-```http
-GET /promotions/active
-```
 
 **Response (200 OK):**
 ```json
@@ -581,17 +457,6 @@ GET /promotions/active
 
 > **GET** `/promotions/:id`
 
-**Description:**
-Get promotion detail by ID.
-
-**Path Parameters:**
-- `id` (string, required) - Promotion ID
-
-**Example Request:**
-```http
-GET /promotions/promo-1
-```
-
 **Response (200 OK):**
 ```json
 {
@@ -604,18 +469,8 @@ GET /promotions/promo-1
     "startDate": "2025-01-01T00:00:00.000Z",
     "endDate": "2025-01-31T23:59:59.000Z",
     "isActive": true,
-    "productCount": 20,
-    "createdAt": "2024-12-15T00:00:00.000Z"
+    "productCount": 20
   }
-}
-```
-
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Promotion not found"
 }
 ```
 
@@ -625,22 +480,9 @@ GET /promotions/promo-1
 
 > **GET** `/promotions/:id/products`
 
-**Description:**
-Get all products in a specific promotion.
+**Query Parameters:** Same as Get All Products
 
-**Path Parameters:**
-- `id` (string, required) - Promotion ID
-
-**Query Parameters:**
-Same as product list
-
-**Example Request:**
-```http
-GET /promotions/promo-1/products?page=1&limit=20
-```
-
-**Response (200 OK):**
-Same format as Get All Products
+**Response:** Same format as Get All Products
 
 ---
 
@@ -650,10 +492,7 @@ Same format as Get All Products
 
 > **POST** `/reviews`
 
-**Authorization:** Required (User must be authenticated)
-
-**Description:**
-Create a review for a product.
+**Authorization:** Required (User)
 
 **Request Headers:**
 ```json
@@ -668,19 +507,13 @@ Create a review for a product.
 {
   "productId": "uuid-1",
   "rating": 5,
-  "comment": "Excellent product! Highly recommended.",
-  "images": [
+  "comment": "Excellent product!",
+  "imageUrls": [
     "https://cdn.store.com/review-uploads/img1.jpg",
     "https://cdn.store.com/review-uploads/img2.jpg"
   ]
 }
 ```
-
-**Validation:**
-- `productId` (required, must exist)
-- `rating` (required, integer, 1-5)
-- `comment` (optional, max 1000 characters)
-- `images` (optional, array of image URLs, max 5 images)
 
 **Response (201 Created):**
 ```json
@@ -693,37 +526,19 @@ Create a review for a product.
     "userId": "user-1",
     "productId": "uuid-1",
     "rating": 5,
-    "comment": "Excellent product! Highly recommended.",
+    "comment": "Excellent product!",
     "images": [
-      "https://cdn.store.com/review-uploads/img1.jpg",
-      "https://cdn.store.com/review-uploads/img2.jpg"
+      {
+        "id": "rev-img-1",
+        "imageUrl": "https://cdn.store.com/review-uploads/img1.jpg"
+      },
+      {
+        "id": "rev-img-2",
+        "imageUrl": "https://cdn.store.com/review-uploads/img2.jpg"
+      }
     ],
     "createdAt": "2025-01-16T09:00:00.000Z"
   }
-}
-```
-
-**Error (400):**
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Validation failed",
-  "errors": [
-    {
-      "field": "rating",
-      "message": "Rating must be between 1 and 5"
-    }
-  ]
-}
-```
-
-**Error (409):**
-```json
-{
-  "status": "error",
-  "code": 409,
-  "message": "You have already reviewed this product"
 }
 ```
 
@@ -733,28 +548,14 @@ Create a review for a product.
 
 > **PATCH** `/reviews/:id`
 
-**Authorization:** Required (User can only update their own review)
-
-**Description:**
-Update user's own review.
-
-**Path Parameters:**
-- `id` (string, required) - Review ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <access_token>",
-  "Content-Type": "application/json"
-}
-```
+**Authorization:** Required (User can only update own review)
 
 **Request Body:**
 ```json
 {
   "rating": 4,
-  "comment": "Updated review comment",
-  "images": [
+  "comment": "Updated review",
+  "imageUrls": [
     "https://cdn.store.com/review-uploads/img1-updated.jpg"
   ]
 }
@@ -769,30 +570,15 @@ Update user's own review.
   "data": {
     "id": "rev-1",
     "rating": 4,
-    "comment": "Updated review comment",
+    "comment": "Updated review",
     "images": [
-      "https://cdn.store.com/review-uploads/img1-updated.jpg"
+      {
+        "id": "rev-img-1",
+        "imageUrl": "https://cdn.store.com/review-uploads/img1-updated.jpg"
+      }
     ],
     "updatedAt": "2025-01-16T10:00:00.000Z"
   }
-}
-```
-
-**Error (403):**
-```json
-{
-  "status": "error",
-  "code": 403,
-  "message": "You can only update your own review"
-}
-```
-
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Review not found"
 }
 ```
 
@@ -802,25 +588,7 @@ Update user's own review.
 
 > **DELETE** `/reviews/:id`
 
-**Authorization:** Required (User can only delete their own review)
-
-**Description:**
-Delete user's own review.
-
-**Path Parameters:**
-- `id` (string, required) - Review ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <access_token>"
-}
-```
-
-**Example Request:**
-```http
-DELETE /reviews/rev-1
-```
+**Authorization:** Required (User can only delete own review)
 
 **Response (200 OK):**
 ```json
@@ -828,24 +596,6 @@ DELETE /reviews/rev-1
   "status": "success",
   "code": 200,
   "message": "Review deleted successfully"
-}
-```
-
-**Error (403):**
-```json
-{
-  "status": "error",
-  "code": 403,
-  "message": "You can only delete your own review"
-}
-```
-
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Review not found"
 }
 ```
 
@@ -857,20 +607,9 @@ DELETE /reviews/rev-1
 
 > **POST** `/products/:id/increment-view`
 
-**Description:**
-Increment product view count (called when user views product detail).
-
-**Path Parameters:**
-- `id` (string, required) - Product ID
-
 **Request Body:**
 ```json
 {}
-```
-
-**Example Request:**
-```http
-POST /products/uuid-1/increment-view
 ```
 
 **Response (200 OK):**
@@ -886,15 +625,6 @@ POST /products/uuid-1/increment-view
 }
 ```
 
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Product not found"
-}
-```
-
 ---
 
 # 🔐 Admin API - Products
@@ -903,30 +633,15 @@ POST /products/uuid-1/increment-view
 
 > **GET** `/admin/products`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Get all products including inactive and soft-deleted products.
+**Authorization:** Required (Admin/Owner)
 
 **Query Parameters:**
-- All public product query params, plus:
-- `includeDeleted` (boolean) - Include soft-deleted products
-- `isActive` (boolean) - Filter by active status
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/products?page=1&limit=20&includeDeleted=true
-```
+- All public product params, plus:
+- `includeDeleted` (boolean)
+- `isActive` (boolean)
 
 **Response (200 OK):**
-Same format as public product list
+Same format as public product list, but includes `deletedAt` field
 
 ---
 
@@ -934,28 +649,10 @@ Same format as public product list
 
 > **GET** `/admin/products/:id`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Get product detail by ID (can access inactive/deleted products).
-
-**Path Parameters:**
-- `id` (string, required) - Product ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/products/uuid-1
-```
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
-Same format as public product detail
+Same format as public product detail, but includes `deletedAt` field
 
 ---
 
@@ -963,18 +660,7 @@ Same format as public product detail
 
 > **POST** `/admin/products`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Create a new product with variants and images in a single request.
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>",
-  "Content-Type": "application/json"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
@@ -1006,52 +692,22 @@ Create a new product with variants and images in a single request.
         "https://cdn.store.com/variants/v1-img1.jpg",
         "https://cdn.store.com/variants/v1-img2.jpg"
       ]
-    },
-    {
-      "variantName": "Silver 1TB",
-      "sku": "MBP-M3-SV-1TB",
-      "stock": 5,
-      "isActive": true,
-      "imageUrls": [
-        "https://cdn.store.com/variants/v2-img1.jpg"
-      ]
     }
   ],
-  "tagIds": ["tag-1", "tag-2", "tag-3"]
+  "tagIds": ["tag-1", "tag-2"]
 }
 ```
-
-**Validation:**
-- `name` (required, min 3, max 255)
-- `slug` (required, unique, lowercase, alphanumeric with hyphens)
-- `idDescription` (optional, max 5000)
-- `enDescription` (optional, max 5000)
-- `idPrice` (required, integer, min 0)
-- `enPrice` (required, integer, min 0)
-- `imageUrl` (optional)
-- `weight`, `height`, `length`, `width` (optional, integer)
-- `taxRate` (optional, float, 0-1)
-- `categoryId` (optional, must exist)
-- `variants` (optional, array of variant objects)
-  - Each variant requires: `variantName`, `sku`, `stock`
-  - `imageUrls` (optional, array of image URLs)
-- `tagIds` (optional, array of valid tag IDs)
 
 **Response (201 Created):**
 ```json
 {
   "status": "success",
   "code": 201,
-  "message": "Product created successfully with 2 variants",
+  "message": "Product created successfully with 1 variant",
   "data": {
     "id": "uuid-new",
     "name": "MacBook Pro M3",
     "slug": "macbook-pro-m3",
-    "idPrice": 25000000,
-    "enPrice": 1700,
-    "imageUrl": "https://cdn.store.com/products/macbook.jpg",
-    "categoryId": "cat-1",
-    "isFeatured": false,
     "variants": [
       {
         "id": "var-new-1",
@@ -1062,22 +718,6 @@ Create a new product with variants and images in a single request.
           {
             "id": "img-1",
             "imageUrl": "https://cdn.store.com/variants/v1-img1.jpg"
-          },
-          {
-            "id": "img-2",
-            "imageUrl": "https://cdn.store.com/variants/v1-img2.jpg"
-          }
-        ]
-      },
-      {
-        "id": "var-new-2",
-        "variantName": "Silver 1TB",
-        "sku": "MBP-M3-SV-1TB",
-        "stock": 5,
-        "images": [
-          {
-            "id": "img-3",
-            "imageUrl": "https://cdn.store.com/variants/v2-img1.jpg"
           }
         ]
       }
@@ -1087,34 +727,10 @@ Create a new product with variants and images in a single request.
         "id": "tag-1",
         "name": "Trending",
         "slug": "trending"
-      },
-      {
-        "id": "tag-2",
-        "name": "Premium",
-        "slug": "premium"
       }
     ],
     "createdAt": "2025-01-15T10:00:00.000Z"
   }
-}
-```
-
-**Error (400):**
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Validation failed",
-  "errors": [
-    {
-      "field": "slug",
-      "message": "Slug already exists"
-    },
-    {
-      "field": "variants[0].sku",
-      "message": "SKU already exists"
-    }
-  ]
 }
 ```
 
@@ -1124,63 +740,27 @@ Create a new product with variants and images in a single request.
 
 > **PATCH** `/admin/products/:id`
 
-**Authorization:** Required (Admin/Owner role)
+**Authorization:** Required (Admin/Owner)
 
-**Description:**
-Update product with all its variants, images, and tags in a single request.
-
-**Path Parameters:**
-- `id` (string, required) - Product ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>",
-  "Content-Type": "application/json"
-}
-```
-
-**Request Body (All fields optional):**
+**Request Body (All optional):**
 ```json
 {
   "name": "MacBook Pro M3 (Updated)",
-  "slug": "macbook-pro-m3-updated",
-  "idDescription": "Updated Indonesian description",
-  "enDescription": "Updated English description",
   "idPrice": 26000000,
-  "enPrice": 1750,
-  "imageUrl": "https://cdn.store.com/products/new-image.jpg",
-  "weight": 1600,
-  "height": 2,
-  "length": 30,
-  "width": 21,
-  "taxRate": 0.11,
-  "categoryId": "cat-2",
-  "promotionId": "promo-1",
   "isActive": true,
   "isFeatured": true,
-  "isPreOrder": true,
-  "preOrderDays": 14,
   "variants": [
     {
       "id": "var-1",
-      "variantName": "Space Gray 512GB (Updated)",
-      "sku": "MBP-M3-SG-512",
       "stock": 15,
-      "isActive": true,
       "imagesToDelete": ["img-old-1"],
-      "imagesToKeep": ["img-2", "img-3"],
       "newImageUrls": ["https://cdn.store.com/new-img.jpg"]
     },
     {
-      "variantName": "Space Gray 1TB",
-      "sku": "MBP-M3-SG-1TB",
-      "stock": 8,
-      "isActive": true,
-      "imageUrls": [
-        "https://cdn.store.com/variants/new-var-img1.jpg",
-        "https://cdn.store.com/variants/new-var-img2.jpg"
-      ]
+      "variantName": "New Variant",
+      "sku": "NEW-SKU",
+      "stock": 10,
+      "imageUrls": ["https://cdn.store.com/variant-img.jpg"]
     },
     {
       "id": "var-3",
@@ -1191,238 +771,34 @@ Update product with all its variants, images, and tags in a single request.
 }
 ```
 
-**Alternative: Incremental Tag Update**
-```json
-{
-  "name": "MacBook Pro M3 (Updated)",
-  "addTagIds": ["tag-5", "tag-6"],
-  "removeTagIds": ["tag-1"]
-}
-```
-
-**Validation:**
-- Same as Create Product
-- `variants` can contain mix of existing (with `id`) and new variants (without `id`)
-- Variants with `_delete: true` will be soft-deleted
-- For variant images:
-  - `imagesToDelete`: Array of image IDs to delete
-  - `imagesToKeep`: Array of image IDs to keep
-  - `newImageUrls`: Array of new image URLs
-  - `imageUrls`: Array of image URLs (for new variants)
-
 **Response (200 OK):**
 ```json
 {
   "status": "success",
   "code": 200,
-  "message": "Product updated successfully. 1 variant updated, 1 variant created, 1 variant deleted",
+  "message": "Product updated successfully",
   "data": {
     "id": "uuid-1",
     "name": "MacBook Pro M3 (Updated)",
-    "slug": "macbook-pro-m3-updated",
-    "idPrice": 26000000,
-    "enPrice": 1750,
-    "imageUrl": "https://cdn.store.com/products/macbook-new.jpg",
-    "isActive": true,
-    "isFeatured": true,
-    "isPreOrder": true,
-    "preOrderDays": 14,
     "variants": [
       {
         "id": "var-1",
-        "variantName": "Space Gray 512GB (Updated)",
-        "sku": "MBP-M3-SG-512",
         "stock": 15,
-        "isActive": true,
         "images": [
-          {
-            "id": "img-2",
-            "imageUrl": "https://cdn.store.com/variants/img2.jpg"
-          },
           {
             "id": "img-new-1",
-            "imageUrl": "https://cdn.store.com/variants/new-img1.jpg"
+            "imageUrl": "https://cdn.store.com/new-img.jpg"
           }
         ]
-      },
-      {
-        "id": "var-new-1",
-        "variantName": "Space Gray 1TB",
-        "sku": "MBP-M3-SG-1TB",
-        "stock": 8,
-        "isActive": true,
-        "images": [
-          {
-            "id": "img-new-2",
-            "imageUrl": "https://cdn.store.com/variants/new-var-img1.jpg"
-          },
-          {
-            "id": "img-new-3",
-            "imageUrl": "https://cdn.store.com/variants/new-var-img2.jpg"
-          }
-        ]
-      }
-    ],
-    "tags": [
-      {
-        "id": "tag-1",
-        "name": "Trending",
-        "slug": "trending"
-      },
-      {
-        "id": "tag-2",
-        "name": "Premium",
-        "slug": "premium"
-      },
-      {
-        "id": "tag-4",
-        "name": "Best Seller",
-        "slug": "best-seller"
       }
     ],
     "summary": {
       "variantsUpdated": 1,
       "variantsCreated": 1,
-      "variantsDeleted": 1,
-      "imagesAdded": 2,
-      "imagesDeleted": 1,
-      "tagsUpdated": true
+      "variantsDeleted": 1
     },
     "updatedAt": "2025-01-15T15:00:00.000Z"
   }
-}
-```
-
-**Usage Examples:**
-
-### **Example 1: Simple Update (Product Info Only)**
-```json
-{
-  "name": "MacBook Pro M3 16-inch",
-  "idPrice": 27000000,
-  "isFeatured": true
-}
-```
-
-### **Example 2: Update Product + Add New Variant**
-```json
-{
-  "name": "MacBook Pro M3 (2025)",
-  "variants": [
-    {
-      "variantName": "Midnight 2TB",
-      "sku": "MBP-M3-MD-2TB",
-      "stock": 3,
-      "isActive": true,
-      "imageUrls": [
-        "https://cdn.store.com/variants/midnight-img1.jpg",
-        "https://cdn.store.com/variants/midnight-img2.jpg"
-      ]
-    }
-  ]
-}
-```
-
-### **Example 3: Update Existing Variant Stock**
-```json
-{
-  "variants": [
-    {
-      "id": "var-1",
-      "stock": 50
-    }
-  ]
-}
-```
-
-### **Example 4: Delete Variant + Update Tags**
-```json
-{
-  "variants": [
-    {
-      "id": "var-2",
-      "_delete": true
-    }
-  ],
-  "tagIds": ["tag-1", "tag-3", "tag-5"]
-}
-```
-
-### **Example 5: Complete Update Everything**
-```json
-{
-  "name": "MacBook Pro M3 Pro",
-  "idPrice": 30000000,
-  "imageUrl": "https://cdn.store.com/products/new-main.jpg",
-  "isFeatured": true,
-  "isPreOrder": true,
-  "preOrderDays": 21,
-  "variants": [
-    {
-      "id": "var-1",
-      "variantName": "Space Gray 512GB Pro",
-      "stock": 20,
-      "imagesToDelete": ["img-old-1"],
-      "newImageUrls": ["https://cdn.store.com/new-variant-img.jpg"]
-    },
-    {
-      "variantName": "New Color Option",
-      "sku": "MBP-M3-NC-512",
-      "stock": 10,
-      "isActive": true,
-      "imageUrls": [
-        "https://cdn.store.com/variants/new-color-1.jpg",
-        "https://cdn.store.com/variants/new-color-2.jpg",
-        "https://cdn.store.com/variants/new-color-3.jpg"
-      ]
-    }
-  ],
-  "tagIds": ["tag-1", "tag-2", "tag-4", "tag-6"]
-}
-```
-
-**Error Responses:**
-
-**400 Bad Request:**
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Validation failed",
-  "errors": [
-    {
-      "field": "variants[0].sku",
-      "message": "SKU already exists"
-    },
-    {
-      "field": "imageUrl",
-      "message": "Invalid image URL format"
-    }
-  ]
-}
-```
-
-**404 Not Found:**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Product not found"
-}
-```
-
-**409 Conflict:**
-```json
-{
-  "status": "error",
-  "code": 409,
-  "message": "Update failed",
-  "errors": [
-    {
-      "field": "slug",
-      "message": "Slug already used by another product"
-    }
-  ]
 }
 ```
 
@@ -1432,25 +808,7 @@ Update product with all its variants, images, and tags in a single request.
 
 > **DELETE** `/admin/products/:id`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Soft delete a product (set deletedAt timestamp).
-
-**Path Parameters:**
-- `id` (string, required) - Product ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-DELETE /admin/products/uuid-1
-```
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
 ```json
@@ -1465,44 +823,17 @@ DELETE /admin/products/uuid-1
 }
 ```
 
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Product not found"
-}
-```
-
 ---
 
 ## 24. Restore Product
 
 > **POST** `/admin/products/:id/restore`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Restore a soft-deleted product.
-
-**Path Parameters:**
-- `id` (string, required) - Product ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
 {}
-```
-
-**Example Request:**
-```http
-POST /admin/products/uuid-1/restore
 ```
 
 **Response (200 OK):**
@@ -1513,19 +844,9 @@ POST /admin/products/uuid-1/restore
   "message": "Product restored successfully",
   "data": {
     "id": "uuid-1",
-    "name": "MacBook Pro M3",
     "deletedAt": null,
     "restoredAt": "2025-01-16T11:00:00.000Z"
   }
-}
-```
-
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Product not found or not deleted"
 }
 ```
 
@@ -1535,25 +856,7 @@ POST /admin/products/uuid-1/restore
 
 > **DELETE** `/admin/products/:id/permanent`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Permanently delete a product from database.
-
-**Path Parameters:**
-- `id` (string, required) - Product ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-DELETE /admin/products/uuid-1/permanent
-```
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
 ```json
@@ -1564,85 +867,19 @@ DELETE /admin/products/uuid-1/permanent
 }
 ```
 
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Product not found"
-}
-```
-
 ---
-
-## 26. Toggle Product Active Status
-
-> **PATCH** `/admin/products/:id/toggle-active`
-
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Toggle product active/inactive status.
-
-**Path Parameters:**
-- `id` (string, required) - Product ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Request Body:**
-```json
-{}
-```
-
-**Example Request:**
-```http
-PATCH /admin/products/uuid-1/toggle-active
-```
-
-**Response (200 OK):**
-```json
-{
-  "status": "success",
-  "code": 200,
-  "message": "Product status updated",
-  "data": {
-    "id": "uuid-1",
-    "isActive": false,
-    "updatedAt": "2025-01-16T12:00:00.000Z"
-  }
-}
-```
 
 # 📁 Admin API - Categories
 
-## 34. Get All Categories (Admin)
+## 26. Get All Categories (Admin)
 
 > **GET** `/admin/categories`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Get all categories including inactive ones.
+**Authorization:** Required (Admin/Owner)
 
 **Query Parameters:**
-- `includeInactive` (boolean) - Include inactive categories
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/categories?includeInactive=true
-```
+- `includeInactive` (boolean)
+- `includeDeleted` (boolean)
 
 **Response (200 OK):**
 ```json
@@ -1655,72 +892,20 @@ GET /admin/categories?includeInactive=true
       "name": "Electronics",
       "slug": "electronics",
       "isActive": true,
-      "productCount": 45,
-      "createdAt": "2025-01-01T00:00:00.000Z",
-      "updatedAt": "2025-01-10T00:00:00.000Z"
+      "deletedAt": null,
+      "productCount": 20,
+      "createdAt": "2024-12-15T00:00:00.000Z"
     }
   ]
 }
 ```
 
----
 
-## 35. Get Category Detail (Admin)
-
-> **GET** `/admin/categories/:id`
-
-**Authorization:** Required (Admin/Owner role)
-
-**Path Parameters:**
-- `id` (string, required) - Category ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/categories/cat-1
-```
-
-**Response (200 OK):**
-```json
-{
-  "status": "success",
-  "code": 200,
-  "data": {
-    "id": "cat-1",
-    "name": "Electronics",
-    "slug": "electronics",
-    "isActive": true,
-    "productCount": 45,
-    "createdAt": "2025-01-01T00:00:00.000Z",
-    "updatedAt": "2025-01-10T00:00:00.000Z"
-  }
-}
-```
-
----
-
-## 36. Create Category
+## 28. Create Category
 
 > **POST** `/admin/categories`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Create a new category.
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>",
-  "Content-Type": "application/json"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
@@ -1729,10 +914,6 @@ Create a new category.
   "slug": "electronics"
 }
 ```
-
-**Validation:**
-- `name` (required, min 2, max 100)
-- `slug` (required, unique, lowercase, alphanumeric with hyphens)
 
 **Response (201 Created):**
 ```json
@@ -1750,45 +931,20 @@ Create a new category.
 }
 ```
 
-**Error (400):**
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Validation failed",
-  "errors": [
-    {
-      "field": "slug",
-      "message": "Slug already exists"
-    }
-  ]
-}
-```
-
 ---
 
-## 37. Update Category
+## 29. Update Category
 
 > **PATCH** `/admin/categories/:id`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Path Parameters:**
-- `id` (string, required) - Category ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>",
-  "Content-Type": "application/json"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
 {
   "name": "Consumer Electronics",
-  "slug": "consumer-electronics"
+  "slug": "consumer-electronics",
+  "isActive": true
 }
 ```
 
@@ -1802,6 +958,7 @@ Create a new category.
     "id": "cat-1",
     "name": "Consumer Electronics",
     "slug": "consumer-electronics",
+    "isActive": true,
     "updatedAt": "2025-01-15T12:00:00.000Z"
   }
 }
@@ -1809,90 +966,65 @@ Create a new category.
 
 ---
 
-## 38. Delete Category
+## 30. Soft Delete Category
 
 > **DELETE** `/admin/categories/:id`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Delete a category. Products in this category will have categoryId set to null.
-
-**Path Parameters:**
-- `id` (string, required) - Category ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-DELETE /admin/categories/cat-1
-```
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
 ```json
 {
   "status": "success",
   "code": 200,
-  "message": "Category deleted successfully"
-}
-```
-
-**Error (400):**
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Cannot delete category with active products. Please reassign products first."
+  "message": "Category deleted successfully",
+  "data": {
+    "id": "cat-1",
+    "deletedAt": "2025-01-16T10:00:00.000Z"
+  }
 }
 ```
 
 ---
 
-## 39. Toggle Category Active Status
+## 31. Restore Category
 
-> **PATCH** `/admin/categories/:id/toggle-active`
+> **POST** `/admin/categories/:id/restore`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Toggle category active/inactive status.
-
-**Path Parameters:**
-- `id` (string, required) - Category ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
 {}
 ```
 
-**Example Request:**
-```http
-PATCH /admin/categories/cat-1/toggle-active
+**Response (200 OK):**
+```json
+{
+  "status": "success",
+  "code": 200,
+  "message": "Category restored successfully",
+  "data": {
+    "id": "cat-1",
+    "deletedAt": null
+  }
+}
 ```
+
+---
+
+## 32. Hard Delete Category
+
+> **DELETE** `/admin/categories/:id/permanent`
+
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
 ```json
 {
   "status": "success",
   "code": 200,
-  "message": "Category status updated",
-  "data": {
-    "id": "cat-1",
-    "isActive": false,
-    "updatedAt": "2025-01-15T12:00:00.000Z"
-  }
+  "message": "Category permanently deleted"
 }
 ```
 
@@ -1900,29 +1032,15 @@ PATCH /admin/categories/cat-1/toggle-active
 
 # 🏷️ Admin API - Tags
 
-## 40. Get All Tags (Admin)
+## 33. Get All Tags (Admin)
 
 > **GET** `/admin/tags`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Get all tags including inactive ones.
+**Authorization:** Required (Admin/Owner)
 
 **Query Parameters:**
-- `includeInactive` (boolean) - Include inactive tags
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/tags?includeInactive=true
-```
+- `includeInactive` (boolean)
+- `includeDeleted` (boolean)
 
 **Response (200 OK):**
 ```json
@@ -1935,6 +1053,7 @@ GET /admin/tags?includeInactive=true
       "name": "Trending",
       "slug": "trending",
       "isActive": true,
+      "deletedAt": null,
       "productCount": 25,
       "createdAt": "2025-01-01T00:00:00.000Z"
     }
@@ -1944,26 +1063,11 @@ GET /admin/tags?includeInactive=true
 
 ---
 
-## 41. Get Tag Detail (Admin)
+## 34. Get Tag Detail (Admin)
 
 > **GET** `/admin/tags/:id`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Path Parameters:**
-- `id` (string, required) - Tag ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/tags/tag-1
-```
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
 ```json
@@ -1975,6 +1079,7 @@ GET /admin/tags/tag-1
     "name": "Trending",
     "slug": "trending",
     "isActive": true,
+    "deletedAt": null,
     "productCount": 25,
     "createdAt": "2025-01-01T00:00:00.000Z"
   }
@@ -1983,22 +1088,11 @@ GET /admin/tags/tag-1
 
 ---
 
-## 42. Create Tag
+## 35. Create Tag
 
 > **POST** `/admin/tags`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Create a new tag.
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>",
-  "Content-Type": "application/json"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
@@ -2007,10 +1101,6 @@ Create a new tag.
   "slug": "trending"
 }
 ```
-
-**Validation:**
-- `name` (required, unique, min 2, max 50)
-- `slug` (required, unique, lowercase, alphanumeric with hyphens)
 
 **Response (201 Created):**
 ```json
@@ -2028,45 +1118,20 @@ Create a new tag.
 }
 ```
 
-**Error (400):**
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Validation failed",
-  "errors": [
-    {
-      "field": "slug",
-      "message": "Slug already exists"
-    }
-  ]
-}
-```
-
 ---
 
-## 43. Update Tag
+## 36. Update Tag
 
 > **PATCH** `/admin/tags/:id`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Path Parameters:**
-- `id` (string, required) - Tag ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>",
-  "Content-Type": "application/json"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
 {
   "name": "Hot Trending",
-  "slug": "hot-trending"
+  "slug": "hot-trending",
+  "isActive": true
 }
 ```
 
@@ -2080,6 +1145,7 @@ Create a new tag.
     "id": "tag-1",
     "name": "Hot Trending",
     "slug": "hot-trending",
+    "isActive": true,
     "updatedAt": "2025-01-15T12:00:00.000Z"
   }
 }
@@ -2087,211 +1153,65 @@ Create a new tag.
 
 ---
 
-## 44. Delete Tag
+## 37. Soft Delete Tag
 
 > **DELETE** `/admin/tags/:id`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Delete a tag and remove all product associations.
-
-**Path Parameters:**
-- `id` (string, required) - Tag ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-DELETE /admin/tags/tag-1
-```
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
 ```json
 {
   "status": "success",
   "code": 200,
-  "message": "Tag deleted successfully"
-}
-```
-
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Tag not found"
+  "message": "Tag deleted successfully",
+  "data": {
+    "id": "tag-1",
+    "deletedAt": "2025-01-16T10:00:00.000Z"
+  }
 }
 ```
 
 ---
 
-## 45. Toggle Tag Active Status
+## 38. Restore Tag
 
-> **PATCH** `/admin/tags/:id/toggle-active`
+> **POST** `/admin/tags/:id/restore`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Toggle tag active/inactive status.
-
-**Path Parameters:**
-- `id` (string, required) - Tag ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
 {}
 ```
 
-**Example Request:**
-```http
-PATCH /admin/tags/tag-1/toggle-active
-```
-
 **Response (200 OK):**
 ```json
 {
   "status": "success",
   "code": 200,
-  "message": "Tag status updated",
+  "message": "Tag restored successfully",
   "data": {
     "id": "tag-1",
-    "isActive": false,
-    "updatedAt": "2025-01-15T12:00:00.000Z"
+    "deletedAt": null
   }
 }
 ```
 
 ---
 
-## 46. Add Tag to Product
+## 39. Hard Delete Tag
 
-> **POST** `/admin/products/:productId/tags`
+> **DELETE** `/admin/tags/:id/permanent`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Add one or multiple tags to a product.
-
-**Path Parameters:**
-- `productId` (string, required) - Product ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>",
-  "Content-Type": "application/json"
-}
-```
-
-**Request Body:**
-```json
-{
-  "tagIds": ["tag-1", "tag-2", "tag-3"]
-}
-```
-
-**Validation:**
-- `tagIds` (required, array of valid tag IDs)
-
-**Response (201 Created):**
-```json
-{
-  "status": "success",
-  "code": 201,
-  "message": "Tags added to product successfully",
-  "data": {
-    "productId": "uuid-1",
-    "addedTags": [
-      {
-        "id": "tag-1",
-        "name": "Trending",
-        "slug": "trending"
-      },
-      {
-        "id": "tag-2",
-        "name": "Premium",
-        "slug": "premium"
-      },
-      {
-        "id": "tag-3",
-        "name": "Best Seller",
-        "slug": "best-seller"
-      }
-    ]
-  }
-}
-```
-
-**Error (400):**
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Validation failed",
-  "errors": [
-    {
-      "field": "tagIds",
-      "message": "Invalid tag IDs provided"
-    }
-  ]
-}
-```
-
----
-
-## 47. Remove Tag from Product
-
-> **DELETE** `/admin/products/:productId/tags/:tagId`
-
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Remove a tag from a product.
-
-**Path Parameters:**
-- `productId` (string, required) - Product ID
-- `tagId` (string, required) - Tag ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-DELETE /admin/products/uuid-1/tags/tag-1
-```
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
 ```json
 {
   "status": "success",
   "code": 200,
-  "message": "Tag removed from product successfully"
-}
-```
-
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Tag or product not found"
+  "message": "Tag permanently deleted"
 }
 ```
 
@@ -2299,73 +1219,43 @@ DELETE /admin/products/uuid-1/tags/tag-1
 
 # 🎁 Admin API - Promotions
 
-## 48. Get All Promotions (Admin)
+## 40. Get All Promotions (Admin)
 
 > **GET** `/admin/promotions`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Get all promotions including inactive ones.
+**Authorization:** Required (Admin/Owner)
 
 **Query Parameters:**
-- `includeInactive` (boolean) - Include inactive promotions
-- `includeExpired` (boolean) - Include expired promotions
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/promotions?includeInactive=true&includeExpired=true
-```
+- `includeInactive` (boolean)
+- `includeExpired` (boolean)
+- `includeDeleted` (boolean)
 
 **Response (200 OK):**
 ```json
 {
-  "status": "success",
-  "code": 200,
-  "data": [
-    {
+    "status": "success",
+    "code": 200,
+    "data": {
       "id": "promo-1",
       "name": "New Year Sale",
       "discount": 0.15,
       "startDate": "2025-01-01T00:00:00.000Z",
       "endDate": "2025-01-31T23:59:59.000Z",
       "isActive": true,
-      "productCount": 20,
-      "createdAt": "2024-12-15T00:00:00.000Z"
-    }
-  ]
+      "productCount": 20
+    },
+    "createdAt": "2024-12-15T00:00:00.000Z"
 }
+
 ```
 
 ---
 
-## 49. Get Promotion Detail (Admin)
+## 41. Get Promotion Detail (Admin)
 
 > **GET** `/admin/promotions/:id`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Path Parameters:**
-- `id` (string, required) - Promotion ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/promotions/promo-1
-```
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
 ```json
@@ -2379,6 +1269,7 @@ GET /admin/promotions/promo-1
     "startDate": "2025-01-01T00:00:00.000Z",
     "endDate": "2025-01-31T23:59:59.000Z",
     "isActive": true,
+    "deletedAt": null,
     "productCount": 20,
     "products": [
       {
@@ -2395,22 +1286,11 @@ GET /admin/promotions/promo-1
 
 ---
 
-## 50. Create Promotion
+## 42. Create Promotion
 
 > **POST** `/admin/promotions`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Create a new promotion.
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>",
-  "Content-Type": "application/json"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
@@ -2446,46 +1326,21 @@ Create a new promotion.
 }
 ```
 
-**Error (400):**
-```json
-{
-  "status": "error",
-  "code": 400,
-  "message": "Validation failed",
-  "errors": [
-    {
-      "field": "endDate",
-      "message": "End date must be after start date"
-    }
-  ]
-}
-```
-
 ---
 
-## 51. Update Promotion
+## 43. Update Promotion
 
 > **PATCH** `/admin/promotions/:id`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Path Parameters:**
-- `id` (string, required) - Promotion ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>",
-  "Content-Type": "application/json"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
 {
   "name": "New Year Mega Sale",
   "discount": 0.20,
-  "endDate": "2025-02-15T23:59:59.000Z"
+  "endDate": "2025-02-15T23:59:59.000Z",
+  "isActive": true
 }
 ```
 
@@ -2500,6 +1355,7 @@ Create a new promotion.
     "name": "New Year Mega Sale",
     "discount": 0.20,
     "endDate": "2025-02-15T23:59:59.000Z",
+    "isActive": true,
     "updatedAt": "2025-01-15T12:00:00.000Z"
   }
 }
@@ -2507,114 +1363,82 @@ Create a new promotion.
 
 ---
 
-## 52. Delete Promotion
+## 44. Soft Delete Promotion
 
 > **DELETE** `/admin/promotions/:id`
 
-**Authorization:** Required (Admin/Owner role)
+**Authorization:** Required (Admin/Owner)
 
 **Description:**
-Delete a promotion. Products will have promotionId set to null.
-
-**Path Parameters:**
-- `id` (string, required) - Promotion ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-DELETE /admin/promotions/promo-1
-```
+Soft delete a promotion. Products will have promotionId set to null.
 
 **Response (200 OK):**
 ```json
 {
   "status": "success",
   "code": 200,
-  "message": "Promotion deleted successfully"
-}
-```
-
----
-
-## 53. Toggle Promotion Active Status
-
-> **PATCH** `/admin/promotions/:id/toggle-active`
-
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Toggle promotion active/inactive status.
-
-**Path Parameters:**
-- `id` (string, required) - Promotion ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Request Body:**
-```json
-{}
-```
-
-**Example Request:**
-```http
-PATCH /admin/promotions/promo-1/toggle-active
-```
-
-**Response (200 OK):**
-```json
-{
-  "status": "success",
-  "code": 200,
-  "message": "Promotion status updated",
+  "message": "Promotion deleted successfully",
   "data": {
     "id": "promo-1",
-    "isActive": false,
-    "updatedAt": "2025-01-16T10:00:00.000Z"
+    "deletedAt": "2025-01-16T10:00:00.000Z"
   }
 }
 ```
 
 ---
 
-## 54. Assign Product to Promotion
+## 45. Restore Promotion
 
-> **POST** `/admin/promotions/:id/products/:productId`
+> **POST** `/admin/promotions/:id/restore`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Assign a product to a promotion.
-
-**Path Parameters:**
-- `id` (string, required) - Promotion ID
-- `productId` (string, required) - Product ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
+**Authorization:** Required (Admin/Owner)
 
 **Request Body:**
 ```json
 {}
 ```
 
-**Example Request:**
-```http
-POST /admin/promotions/promo-1/products/uuid-1
+**Response (200 OK):**
+```json
+{
+  "status": "success",
+  "code": 200,
+  "message": "Promotion restored successfully",
+  "data": {
+    "id": "promo-1",
+    "deletedAt": null
+  }
+}
+```
+
+---
+
+## 46. Hard Delete Promotion
+
+> **DELETE** `/admin/promotions/:id/permanent`
+
+**Authorization:** Required (Admin/Owner)
+
+**Response (200 OK):**
+```json
+{
+  "status": "success",
+  "code": 200,
+  "message": "Promotion permanently deleted"
+}
+```
+
+---
+
+## 47. Assign Product to Promotion
+
+> **POST** `/admin/promotions/:id/products/:productId`
+
+**Authorization:** Required (Admin/Owner)
+
+**Request Body:**
+```json
+{}
 ```
 
 **Response (201 Created):**
@@ -2644,30 +1468,11 @@ POST /admin/promotions/promo-1/products/uuid-1
 
 ---
 
-## 55. Remove Product from Promotion
+## 48. Remove Product from Promotion
 
 > **DELETE** `/admin/promotions/:id/products/:productId`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Remove a product from a promotion.
-
-**Path Parameters:**
-- `id` (string, required) - Promotion ID
-- `productId` (string, required) - Product ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-DELETE /admin/promotions/promo-1/products/uuid-1
-```
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
 ```json
@@ -2682,14 +1487,11 @@ DELETE /admin/promotions/promo-1/products/uuid-1
 
 # ⭐ Admin API - Reviews Management
 
-## 56. Get All Reviews (Admin)
+## 49. Get All Reviews (Admin)
 
 > **GET** `/admin/reviews`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Get all reviews with filtering options.
+**Authorization:** Required (Admin/Owner)
 
 **Query Parameters:**
 - `page` (integer, default: 1)
@@ -2698,18 +1500,6 @@ Get all reviews with filtering options.
 - `rating` (integer) - Filter by rating (1-5)
 - `sortBy` (string) - Sort by: `createdAt`, `rating`
 - `order` (string) - `asc`, `desc`
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/reviews?page=1&limit=20&rating=5&sortBy=createdAt&order=desc
-```
 
 **Response (200 OK):**
 ```json
@@ -2742,7 +1532,10 @@ GET /admin/reviews?page=1&limit=20&rating=5&sortBy=createdAt&order=desc
       "rating": 5,
       "comment": "Excellent product!",
       "images": [
-        "https://cdn.store.com/reviews/img1.jpg"
+        {
+          "id": "rev-img-1",
+          "imageUrl": "https://cdn.store.com/reviews/img1.jpg"
+        }
       ],
       "createdAt": "2025-01-15T14:30:00.000Z"
     }
@@ -2752,26 +1545,11 @@ GET /admin/reviews?page=1&limit=20&rating=5&sortBy=createdAt&order=desc
 
 ---
 
-## 57. Get Review Detail (Admin)
+## 50. Get Review Detail (Admin)
 
 > **GET** `/admin/reviews/:id`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Path Parameters:**
-- `id` (string, required) - Review ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/reviews/rev-1
-```
+**Authorization:** Required (Admin/Owner)
 
 **Response (200 OK):**
 ```json
@@ -2798,7 +1576,14 @@ GET /admin/reviews/rev-1
     "rating": 5,
     "comment": "Excellent product! Highly recommended.",
     "images": [
-      "https://cdn.store.com/reviews/img1.jpg"
+      {
+        "id": "rev-img-1",
+        "imageUrl": "https://cdn.store.com/reviews/img1.jpg"
+      },
+      {
+        "id": "rev-img-2",
+        "imageUrl": "https://cdn.store.com/reviews/img2.jpg"
+      }
     ],
     "createdAt": "2025-01-15T14:30:00.000Z",
     "updatedAt": "2025-01-15T14:30:00.000Z"
@@ -2808,29 +1593,14 @@ GET /admin/reviews/rev-1
 
 ---
 
-## 58. Delete Review (Admin)
+## 51. Delete Review (Admin)
 
 > **DELETE** `/admin/reviews/:id`
 
-**Authorization:** Required (Admin/Owner role)
+**Authorization:** Required (Admin/Owner)
 
 **Description:**
 Delete a review (moderation/spam removal).
-
-**Path Parameters:**
-- `id` (string, required) - Review ID
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-DELETE /admin/reviews/rev-1
-```
 
 **Response (200 OK):**
 ```json
@@ -2843,36 +1613,18 @@ DELETE /admin/reviews/rev-1
 
 ---
 
-## 59. Get Reviews by Product (Admin)
+## 52. Get Reviews by Product (Admin)
 
 > **GET** `/admin/products/:productId/reviews`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Get all reviews for a specific product.
-
-**Path Parameters:**
-- `productId` (string, required) - Product ID
+**Authorization:** Required (Admin/Owner)
 
 **Query Parameters:**
 - `page` (integer, default: 1)
 - `limit` (integer, default: 20)
 - `rating` (integer) - Filter by rating (1-5)
-- `sortBy` (string) - Sort by: `createdAt`, `rating` (default: `createdAt`)
-- `order` (string) - Order: `asc`, `desc` (default: `desc`)
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/products/uuid-1/reviews?page=1&limit=10&rating=5&sortBy=createdAt&order=desc
-```
+- `sortBy` (string) - Sort by: `createdAt`, `rating`
+- `order` (string) - `asc`, `desc`
 
 **Response (200 OK):**
 ```json
@@ -2908,31 +1660,19 @@ GET /admin/products/uuid-1/reviews?page=1&limit=10&rating=5&sortBy=createdAt&ord
       },
       "productId": "uuid-1",
       "rating": 5,
-      "comment": "Excellent product! The M3 chip is incredibly fast and battery life is amazing. Highly recommended for professionals.",
+      "comment": "Excellent product! The M3 chip is incredibly fast.",
       "images": [
-        "https://cdn.store.com/reviews/rev-1-img-1.jpg",
-        "https://cdn.store.com/reviews/rev-1-img-2.jpg"
+        {
+          "id": "rev-img-1",
+          "imageUrl": "https://cdn.store.com/reviews/rev-1-img-1.jpg"
+        },
+        {
+          "id": "rev-img-2",
+          "imageUrl": "https://cdn.store.com/reviews/rev-1-img-2.jpg"
+        }
       ],
       "createdAt": "2025-01-15T14:30:00.000Z",
       "updatedAt": "2025-01-15T14:30:00.000Z"
-    },
-    {
-      "id": "rev-2",
-      "userId": "user-2",
-      "user": {
-        "id": "user-2",
-        "username": "janesmith",
-        "email": "jane@example.com",
-        "firstName": "Jane",
-        "lastName": "Smith",
-        "profileImage": null
-      },
-      "productId": "uuid-1",
-      "rating": 5,
-      "comment": "Best laptop I've ever owned. Worth every penny!",
-      "images": [],
-      "createdAt": "2025-01-14T10:20:00.000Z",
-      "updatedAt": "2025-01-14T10:20:00.000Z"
     }
   ],
   "statistics": {
@@ -2949,45 +1689,18 @@ GET /admin/products/uuid-1/reviews?page=1&limit=10&rating=5&sortBy=createdAt&ord
 }
 ```
 
-**Error (404):**
-```json
-{
-  "status": "error",
-  "code": 404,
-  "message": "Product not found"
-}
-```
-
 ---
 
 # 📊 Admin API - Statistics & Reports
 
-## 60. Get Product Statistics
+## 53. Get Product Statistics
 
 > **GET** `/admin/products/:id/statistics`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Get detailed statistics for a product.
-
-**Path Parameters:**
-- `id` (string, required) - Product ID
+**Authorization:** Required (Admin/Owner)
 
 **Query Parameters:**
 - `days` (integer, default: 30) - Statistics for last N days
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/products/uuid-1/statistics?days=30
-```
 
 **Response (200 OK):**
 ```json
@@ -3027,30 +1740,15 @@ GET /admin/products/uuid-1/statistics?days=30
 
 ---
 
-## 61. Export Products
+## 54. Export Products
 
 > **GET** `/admin/products/export`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Export products to CSV/Excel.
+**Authorization:** Required (Admin/Owner)
 
 **Query Parameters:**
 - `format` (string) - `csv` or `xlsx` (default: csv)
 - Other filter params (same as Get All Products)
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/products/export?format=csv&categorySlug=electronics
-```
 
 **Response (200 OK):**
 Returns a downloadable file with:
@@ -3060,29 +1758,14 @@ Returns a downloadable file with:
 
 ---
 
-## 62. Get Dashboard Summary
+## 55. Get Dashboard Summary
 
 > **GET** `/admin/dashboard/summary`
 
-**Authorization:** Required (Admin/Owner role)
-
-**Description:**
-Get summary statistics for admin dashboard.
+**Authorization:** Required (Admin/Owner)
 
 **Query Parameters:**
 - `period` (string) - `today`, `week`, `month`, `year` (default: month)
-
-**Request Headers:**
-```json
-{
-  "Authorization": "Bearer <admin_access_token>"
-}
-```
-
-**Example Request:**
-```http
-GET /admin/dashboard/summary?period=month
-```
 
 **Response (200 OK):**
 ```json
@@ -3119,41 +1802,3 @@ GET /admin/dashboard/summary?period=month
 }
 ```
 
----
-
-# 🔍 Search & Filter
-
-## 63. Advanced Product Search
-
-> **GET** `/products/search`
-
-**Description:**
-Advanced product search with multiple filters.
-
-**Query Parameters:**
-- `q` (string) - Search query
-- `categoryId` (string) - Filter by category
-- `tags` (string) - Comma-separated tag slugs
-- `minPrice` (integer) - Minimum price
-- `maxPrice` (integer) - Maximum price
-- `rating` (integer) - Minimum rating (1-5)
-- `inStock` (boolean) - Only show in-stock products
-- `isFeatured` (boolean) - Filter featured products
-- `isPreOrder` (boolean) - Filter pre-order products
-- `sortBy` (string) - Sort field
-- `order` (string) - Sort order
-- `page` (integer) - Page number
-- `limit` (integer) - Items per page
-
-**Example Request:**
-```http
-GET /products/search?q=macbook&tags=trending,premium&minPrice=20000000&maxPrice=30000000&rating=4&inStock=true&sortBy=avgRating&order=desc
-```
-
-**Response (200 OK):**
-Same format as Get All Products
-
----
-
-**Version:** 1.0.0  
-**Last Updated:** January 16, 2025
