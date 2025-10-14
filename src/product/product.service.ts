@@ -13,6 +13,7 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Prisma } from '@prisma/client';
+import {UpdateProductDto} from "./dto/update-product.dto";
 
 @Injectable()
 export class ProductService {
@@ -567,5 +568,519 @@ export class ProductService {
         data.sort((a, b) => b.trendingScore - a.trendingScore);
 
         return { data };
+    }
+
+
+    async updateProduct(
+        id: string,
+        dto: UpdateProductDto,
+        mainImageFile?: Express.Multer.File,
+    ) {
+        // Check if product exists
+        const existingProduct = await this.prisma.product.findUnique({
+            where: { id },
+            include: {
+                variants: true,
+                tags: true,
+            },
+        });
+
+        if (!existingProduct) {
+            throw new NotFoundException('Product not found');
+        }
+
+        if (dto.variants && dto.variants.length > 0) {
+            const incomingSkus = dto.variants
+                .filter(v => v.sku && v._action !== 'delete')
+                .map(v => v.sku!);
+
+            const uniqueSkus = new Set(incomingSkus);
+
+            if (incomingSkus.length !== uniqueSkus.size) {
+                const duplicates = incomingSkus.filter((item, index) => incomingSkus.indexOf(item) !== index);
+                throw new ConflictException(
+                    `Duplicate SKUs found in the request: ${[...new Set(duplicates)].join(', ')}`,
+                );
+            }
+        }
+
+        // Check if slug is being changed and already exists
+        if (dto.slug && dto.slug !== existingProduct.slug) {
+            const slugExists = await this.prisma.product.findUnique({
+                where: { slug: dto.slug },
+            });
+
+            if (slugExists) {
+                throw new ConflictException('Product with this slug already exists');
+            }
+        }
+
+        // Check if category exists
+        if (dto.categoryId !== undefined) {
+            if (dto.categoryId === null) {
+                // Allow removing category
+            } else {
+                const category = await this.prisma.category.findUnique({
+                    where: { id: dto.categoryId, deletedAt: null },
+                });
+
+                if (!category) {
+                    throw new BadRequestException('Category not found');
+                }
+            }
+        }
+
+        // Check if promotion exists
+        if (dto.promotionId !== undefined) {
+            if (dto.promotionId === null) {
+                // Allow removing promotion
+            } else {
+                const promotion = await this.prisma.promotion.findUnique({
+                    where: { id: dto.promotionId, deletedAt: null },
+                });
+
+                if (!promotion) {
+                    throw new BadRequestException('Promotion not found');
+                }
+            }
+        }
+
+        // Check if tags exist
+        if (dto.tagIds && dto.tagIds.length > 0) {
+            const tags = await this.prisma.tag.findMany({
+                where: { id: { in: dto.tagIds }, deletedAt: null },
+            });
+
+            if (tags.length !== dto.tagIds.length) {
+                throw new BadRequestException('One or more tags not found');
+            }
+        }
+
+        // Check variant SKUs uniqueness against other products
+        if (dto.variants && dto.variants.length > 0) {
+            const skusToCheck = dto.variants
+                .filter((v) => v.sku && v._action !== 'delete')
+                .map((v) => v.sku!);
+
+            if (skusToCheck.length > 0) {
+                const existingVariants = await this.prisma.productVariant.findMany({
+                    where: {
+                        sku: { in: skusToCheck },
+                        productId: { not: id }, // Exclude current product's variants
+                    },
+                });
+
+                if (existingVariants.length > 0) {
+                    const duplicateSKUs = existingVariants.map((v) => v.sku);
+                    throw new ConflictException(
+                        `SKU already exists in another product: ${duplicateSKUs.join(', ')}`,
+                    );
+                }
+            }
+        }
+
+        // Upload new main image if provided
+        let imageUrl = dto.imageUrl;
+        if (mainImageFile) {
+            // Delete old image if exists
+            if (existingProduct.imageUrl) {
+                await this.supabaseService
+                    .deleteImage(existingProduct.imageUrl)
+                    .catch(() => {
+                        this.logger.warn('Failed to delete old product image');
+                    });
+            }
+
+            const uploadResult = await this.supabaseService.uploadImage(
+                mainImageFile,
+                'products',
+            );
+            imageUrl = uploadResult.url;
+        }
+
+        // Update product with variants and tags in transaction
+        const product = await this.prisma.$transaction(async (tx) => {
+            // Update product
+            const updatedProduct = await tx.product.update({
+                where: { id },
+                data: {
+                    ...(dto.name && { name: dto.name }),
+                    ...(dto.slug && { slug: dto.slug }),
+                    ...(dto.idDescription !== undefined && {
+                        idDescription: dto.idDescription,
+                    }),
+                    ...(dto.enDescription !== undefined && {
+                        enDescription: dto.enDescription,
+                    }),
+                    ...(dto.idPrice !== undefined && { idPrice: dto.idPrice }),
+                    ...(dto.enPrice !== undefined && { enPrice: dto.enPrice }),
+                    ...(imageUrl && { imageUrl }),
+                    ...(dto.weight !== undefined && { weight: dto.weight }),
+                    ...(dto.height !== undefined && { height: dto.height }),
+                    ...(dto.length !== undefined && { length: dto.length }),
+                    ...(dto.width !== undefined && { width: dto.width }),
+                    ...(dto.taxRate !== undefined && { taxRate: dto.taxRate }),
+                    ...(dto.categoryId !== undefined && { categoryId: dto.categoryId }),
+                    ...(dto.promotionId !== undefined && { promotionId: dto.promotionId }),
+                    ...(dto.isFeatured !== undefined && { isFeatured: dto.isFeatured }),
+                    ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+                    ...(dto.isPreOrder !== undefined && { isPreOrder: dto.isPreOrder }),
+                    ...(dto.preOrderDays !== undefined && {
+                        preOrderDays: dto.preOrderDays,
+                    }),
+                },
+            });
+
+            // Handle variants update
+            if (dto.variants && dto.variants.length > 0) {
+                for (const variant of dto.variants) {
+                    if (variant.id) {
+                        // Update or delete existing variant
+                        if (variant._action === 'delete') {
+                            // Soft delete variant
+                            await tx.productVariant.update({
+                                where: { id: variant.id },
+                                data: { deletedAt: new Date() },
+                            });
+                        } else {
+                            // Update variant
+                            await tx.productVariant.update({
+                                where: { id: variant.id },
+                                data: {
+                                    ...(variant.variantName && {
+                                        variantName: variant.variantName,
+                                    }),
+                                    ...(variant.sku && { sku: variant.sku }),
+                                    ...(variant.stock !== undefined && { stock: variant.stock }),
+                                    ...(variant.isActive !== undefined && {
+                                        isActive: variant.isActive,
+                                    }),
+                                },
+                            });
+
+                            // Update variant images if provided
+                            if (variant.imageUrls && variant.imageUrls.length > 0) {
+                                // Delete old images
+                                await tx.productVariantImage.deleteMany({
+                                    where: { variantId: variant.id },
+                                });
+
+                                // Add new images
+                                await tx.productVariantImage.createMany({
+                                    data: variant.imageUrls.map((url) => ({
+                                        variantId: variant.id!,
+                                        imageUrl: url,
+                                    })),
+                                });
+                            }
+                        }
+                    } else {
+                        // Create new variant
+                        if (
+                            variant.variantName &&
+                            variant.sku &&
+                            variant.stock !== undefined
+                        ) {
+                            const newVariant = await tx.productVariant.create({
+                                data: {
+                                    productId: updatedProduct.id,
+                                    variantName: variant.variantName,
+                                    sku: variant.sku,
+                                    stock: variant.stock,
+                                    isActive: variant.isActive ?? true,
+                                },
+                            });
+
+                            // Add variant images if provided
+                            if (variant.imageUrls && variant.imageUrls.length > 0) {
+                                await tx.productVariantImage.createMany({
+                                    data: variant.imageUrls.map((url) => ({
+                                        variantId: newVariant.id,
+                                        imageUrl: url,
+                                    })),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Handle tags replacement
+            if (dto.tagIds !== undefined) {
+                // Delete all existing tags
+                await tx.productTag.deleteMany({
+                    where: { productId: id },
+                });
+
+                // Create new tags
+                if (dto.tagIds.length > 0) {
+                    await tx.productTag.createMany({
+                        data: dto.tagIds.map((tagId) => ({
+                            productId: id,
+                            tagId,
+                        })),
+                    });
+                }
+            }
+
+            return updatedProduct;
+        });
+
+        this.logger.info(`✅ Product updated: ${product.name} (${product.id})`);
+
+        // Fetch complete updated product data
+        return this.getProductById(product.id);
+    }
+
+    /**
+     * DELETE PRODUCT (Admin) - Soft Delete
+     */
+    async deleteProduct(id: string) {
+        const product = await this.prisma.product.findUnique({
+            where: { id },
+        });
+
+        if (!product) {
+            throw new NotFoundException('Product not found');
+        }
+
+        if (product.deletedAt) {
+            throw new BadRequestException('Product already deleted');
+        }
+
+        // Soft delete product and its variants
+        await this.prisma.$transaction([
+            this.prisma.product.update({
+                where: { id },
+                data: { deletedAt: new Date() },
+            }),
+            this.prisma.productVariant.updateMany({
+                where: { productId: id },
+                data: { deletedAt: new Date() },
+            }),
+        ]);
+
+        this.logger.info(`🗑️ Product soft deleted: ${product.name} (${id})`);
+
+        return {
+            message: 'Product deleted successfully',
+            data: { id, deletedAt: new Date() },
+        };
+    }
+
+    /**
+     * RESTORE PRODUCT (Admin)
+     */
+    async restoreProduct(id: string) {
+        const product = await this.prisma.product.findUnique({
+            where: { id },
+        });
+
+        if (!product) {
+            throw new NotFoundException('Product not found');
+        }
+
+        if (!product.deletedAt) {
+            throw new BadRequestException('Product is not deleted');
+        }
+
+        // Restore product and its variants
+        await this.prisma.$transaction([
+            this.prisma.product.update({
+                where: { id },
+                data: { deletedAt: null },
+            }),
+            this.prisma.productVariant.updateMany({
+                where: { productId: id },
+                data: { deletedAt: null },
+            }),
+        ]);
+
+        this.logger.info(`♻️ Product restored: ${product.name} (${id})`);
+
+        return this.getProductById(id);
+    }
+
+    /**
+     * HARD DELETE PRODUCT (Admin) - Permanent Delete
+     */
+    async hardDeleteProduct(id: string) {
+        const product = await this.prisma.product.findUnique({
+            where: { id },
+            include: {
+                variants: {
+                    include: {
+                        images: true,
+                    },
+                },
+            },
+        });
+
+        if (!product) {
+            throw new NotFoundException('Product not found');
+        }
+
+        // Delete all images from Supabase
+        const imageDeletionPromises: Promise<any>[] = [];
+
+        // Delete main product image
+        if (product.imageUrl) {
+            imageDeletionPromises.push(
+                this.supabaseService.deleteImage(product.imageUrl).catch(() => {
+                    this.logger.warn('Failed to delete product image');
+                }),
+            );
+        }
+
+        // Delete variant images
+        for (const variant of product.variants) {
+            for (const image of variant.images) {
+                imageDeletionPromises.push(
+                    this.supabaseService.deleteImage(image.imageUrl).catch(() => {
+                        this.logger.warn('Failed to delete variant image');
+                    }),
+                );
+            }
+        }
+
+        await Promise.all(imageDeletionPromises);
+
+        // Hard delete from database (cascades will handle related records)
+        await this.prisma.product.delete({
+            where: { id },
+        });
+
+        this.logger.info(`💀 Product permanently deleted: ${product.name} (${id})`);
+
+        return {
+            message: 'Product permanently deleted',
+            data: { id },
+        };
+    }
+
+    /**
+     * TOGGLE PRODUCT ACTIVE STATUS (Admin)
+     */
+    async toggleProductActive(id: string) {
+        const product = await this.prisma.product.findUnique({
+            where: { id },
+        });
+
+        if (!product) {
+            throw new NotFoundException('Product not found');
+        }
+
+        const updated = await this.prisma.product.update({
+            where: { id },
+            data: {
+                isActive: !product.isActive,
+            },
+        });
+
+        this.logger.info(
+            `🔄 Product active status toggled: ${product.name} (${updated.isActive})`,
+        );
+
+        return {
+            message: 'Product status updated',
+            data: {
+                id: updated.id,
+                isActive: updated.isActive,
+            },
+        };
+    }
+
+    /**
+     * TOGGLE PRODUCT FEATURED STATUS (Admin)
+     */
+    async toggleProductFeatured(id: string) {
+        const product = await this.prisma.product.findUnique({
+            where: { id },
+        });
+
+        if (!product) {
+            throw new NotFoundException('Product not found');
+        }
+
+        const updated = await this.prisma.product.update({
+            where: { id },
+            data: {
+                isFeatured: !product.isFeatured,
+            },
+        });
+
+        this.logger.info(
+            `⭐ Product featured status toggled: ${product.name} (${updated.isFeatured})`,
+        );
+
+        return {
+            message: 'Product featured status updated',
+            data: {
+                id: updated.id,
+                isFeatured: updated.isFeatured,
+            },
+        };
+    }
+
+    /**
+     * BULK DELETE PRODUCTS (Admin)
+     */
+    async bulkDeleteProducts(ids: string[]) {
+        const products = await this.prisma.product.findMany({
+            where: { id: { in: ids } },
+        });
+
+        if (products.length === 0) {
+            throw new NotFoundException('No products found');
+        }
+
+        const result = await this.prisma.$transaction([
+            this.prisma.product.updateMany({
+                where: { id: { in: ids } },
+                data: { deletedAt: new Date() },
+            }),
+            this.prisma.productVariant.updateMany({
+                where: { productId: { in: ids } },
+                data: { deletedAt: new Date() },
+            }),
+        ]);
+
+        this.logger.info(`🗑️ Bulk deleted ${result[0].count} products`);
+
+        return {
+            message: `${result[0].count} products deleted successfully`,
+            data: { count: result[0].count },
+        };
+    }
+
+    /**
+     * BULK RESTORE PRODUCTS (Admin)
+     */
+    async bulkRestoreProducts(ids: string[]) {
+        const products = await this.prisma.product.findMany({
+            where: { id: { in: ids } },
+        });
+
+        if (products.length === 0) {
+            throw new NotFoundException('No products found');
+        }
+
+        const result = await this.prisma.$transaction([
+            this.prisma.product.updateMany({
+                where: { id: { in: ids } },
+                data: { deletedAt: null },
+            }),
+            this.prisma.productVariant.updateMany({
+                where: { productId: { in: ids } },
+                data: { deletedAt: null },
+            }),
+        ]);
+
+        this.logger.info(`♻️ Bulk restored ${result[0].count} products`);
+
+        return {
+            message: `${result[0].count} products restored successfully`,
+            data: { count: result[0].count },
+        };
     }
 }
