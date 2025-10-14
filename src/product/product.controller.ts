@@ -11,7 +11,7 @@ import {
     HttpCode,
     HttpStatus,
     ParseIntPipe,
-    DefaultValuePipe,
+    DefaultValuePipe, Patch, BadRequestException, Delete,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ProductService } from './product.service';
@@ -24,6 +24,7 @@ import { FileUploadUtil } from '../utils/file-upload.util';
 import { GetProductsDto, GetProductsSchema } from './dto/get-products.dto';
 import { CreateProductDto, CreateProductSchema } from './dto/create-product.dto';
 import { Role } from '@prisma/client';
+import {UpdateProductDto, UpdateProductSchema} from "./dto/update-product.dto";
 
 @Controller('products')
 export class ProductController {
@@ -154,5 +155,106 @@ export class AdminProductController {
 
         const dto = this.validationService.validate(CreateProductSchema, body);
         return this.productService.createProduct(dto, file);
+    }
+
+    /**
+     * PATCH /admin/products/:id
+     * Update product
+     */
+    @Patch(':id')
+    @UseInterceptors(
+        FileInterceptor('image', {
+            limits: { fileSize: 2 * 1024 * 1024 },
+            fileFilter: FileUploadUtil.imageFileFilter,
+        }),
+    )
+    async updateProduct(
+        @Param('id') id: string,
+        @Body() body: UpdateProductDto,
+        @UploadedFile() file?: Express.Multer.File,
+    ) {
+        // Parse nested JSON if sent as string
+        if (typeof body.variants === 'string') {
+            body.variants = JSON.parse(body.variants);
+        }
+        if (typeof body.tagIds === 'string') {
+            body.tagIds = JSON.parse(body.tagIds);
+        }
+
+        const dto = this.validationService.validate(UpdateProductSchema, body);
+        return this.productService.updateProduct(id, dto, file);
+    }
+
+    /**
+     * DELETE /admin/products/:id
+     * Soft delete product
+     */
+    @Delete(':id')
+    @HttpCode(HttpStatus.OK)
+    async deleteProduct(@Param('id') id: string) {
+        return this.productService.deleteProduct(id);
+    }
+
+    /**
+     * POST /admin/products/:id/restore
+     * Restore deleted product
+     */
+    @Post(':id/restore')
+    async restoreProduct(@Param('id') id: string) {
+        return this.productService.restoreProduct(id);
+    }
+
+    /**
+     * DELETE /admin/products/:id/hard
+     * Permanently delete product
+     */
+    @Delete(':id/hard')
+    @HttpCode(HttpStatus.OK)
+    async hardDeleteProduct(@Param('id') id: string) {
+        return this.productService.hardDeleteProduct(id);
+    }
+
+    /**
+     * PATCH /admin/products/:id/toggle-active
+     * Toggle product active status
+     */
+    @Patch(':id/toggle-active')
+    async toggleProductActive(@Param('id') id: string) {
+        return this.productService.toggleProductActive(id);
+    }
+
+    /**
+     * PATCH /admin/products/:id/toggle-featured
+     * Toggle product featured status
+     */
+    @Patch(':id/toggle-featured')
+    async toggleProductFeatured(@Param('id') id: string) {
+        return this.productService.toggleProductFeatured(id);
+    }
+
+    /**
+     * POST /admin/products/bulk-delete
+     * Bulk soft delete products
+     */
+    @Post('bulk-delete')
+    @HttpCode(HttpStatus.OK)
+    async bulkDeleteProducts(@Body('ids') ids: string[]) {
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            throw new BadRequestException('Product IDs are required');
+        }
+        return this.productService.bulkDeleteProducts(ids);
+    }
+
+    /**
+     * POST /admin/products/bulk-restore
+     * Bulk restore products
+     */
+    @Post('bulk-restore')
+    @HttpCode(HttpStatus.OK)
+    async bulkRestoreProducts(@Body('ids') ids: string[]) {
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            throw new BadRequestException('Product IDs are required');
+        }
+        return this.productService.bulkRestoreProducts(ids);
     }
 }

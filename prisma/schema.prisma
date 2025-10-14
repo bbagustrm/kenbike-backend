@@ -265,7 +265,7 @@ model ProductTag {
   @@map("product_tags")
 }
 
-// Model Review (update)
+// Model Review
 model Review {
   id        String        @id @default(uuid())
   userId    String        @map("user_id")
@@ -286,7 +286,7 @@ model Review {
   @@map("reviews")
 }
 
-// Model ReviewImage (tambahkan)
+// Model ReviewImage
 model ReviewImage {
   id       String @id @default(uuid())
   reviewId String @map("review_id")
