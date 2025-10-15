@@ -148,7 +148,7 @@ export class ProductService {
                         stock: true,
                         isActive: true,
                     },
-                    take: 5, // Limit variants in list view
+                    take: 5,
                 },
             },
             skip: PaginationUtil.getSkip(validPage, validLimit),
