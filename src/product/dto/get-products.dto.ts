@@ -29,7 +29,12 @@ export const GetProductsSchema = z.object({
     isFeatured: z
         .string()
         .optional()
-        .transform((val) => val === 'true'),
+        .transform((val) => {
+            if (!val) return undefined;
+            if (val === 'true') return true;
+            if (val === 'false') return false;
+            return undefined;
+        }),
     isPreOrder: z
         .string()
         .optional()
