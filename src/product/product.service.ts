@@ -117,6 +117,7 @@ export class ProductService {
                         id: true,
                         name: true,
                         slug: true,
+                        isActive: true,
                     },
                 },
                 promotion: {
@@ -126,6 +127,7 @@ export class ProductService {
                         discount: true,
                         startDate: true,
                         endDate: true,
+                        isActive: true,
                     },
                 },
                 tags: {
@@ -135,6 +137,7 @@ export class ProductService {
                                 id: true,
                                 name: true,
                                 slug: true,
+                                isActive: true,
                             },
                         },
                     },
@@ -473,6 +476,7 @@ export class ProductService {
                 deletedAt: null,
             },
             select: {
+                // Pilih kolom dari tabel produk
                 id: true,
                 name: true,
                 slug: true,
@@ -481,6 +485,36 @@ export class ProductService {
                 imageUrl: true,
                 avgRating: true,
                 totalSold: true,
+                category: {
+                    select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        isActive: true,
+                    },
+                },
+                promotion: {
+                    select: {
+                        id: true,
+                        name: true,
+                        discount: true,
+                        startDate: true,
+                        endDate: true,
+                        isActive: true,
+                    },
+                },
+                tags: {
+                    include: {
+                        tag: {
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                isActive: true,
+                            },
+                        },
+                    },
+                },
             },
             take: limit,
             orderBy: {
@@ -488,7 +522,12 @@ export class ProductService {
             },
         });
 
-        return { data: products };
+        const data = products.map((product) => ({
+            ...product,
+            tags: product.tags.map((pt) => pt.tag),
+        }));
+
+        return { data };
     }
 
     /**
@@ -515,6 +554,37 @@ export class ProductService {
                 imageUrl: true,
                 totalSold: true,
                 avgRating: true,
+                // Sertakan data relasi
+                category: {
+                    select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        isActive: true,
+                    },
+                },
+                promotion: {
+                    select: {
+                        id: true,
+                        name: true,
+                        discount: true,
+                        startDate: true,
+                        endDate: true,
+                        isActive: true,
+                    },
+                },
+                tags: {
+                    include: {
+                        tag: {
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                isActive: true,
+                            },
+                        },
+                    },
+                },
             },
             take: limit,
             orderBy: {
@@ -522,7 +592,13 @@ export class ProductService {
             },
         });
 
-        return { data: products };
+        // Transformasi array tags
+        const data = products.map((product) => ({
+            ...product,
+            tags: product.tags.map((pt) => pt.tag),
+        }));
+
+        return { data };
     }
 
     /**
@@ -550,24 +626,64 @@ export class ProductService {
                 imageUrl: true,
                 totalView: true,
                 avgRating: true,
+                // Sertakan data relasi
+                category: {
+                    select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        isActive: true,
+                    },
+                },
+                promotion: {
+                    select: {
+                        id: true,
+                        name: true,
+                        discount: true,
+                        startDate: true,
+                        endDate: true,
+                        isActive: true,
+                    },
+                },
+                tags: {
+                    include: {
+                        tag: {
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                isActive: true,
+                            },
+                        },
+                    },
+                },
             },
-            take: limit,
+            take: limit * 2, // Ambil lebih banyak untuk diurutkan nanti
             orderBy: [
                 { totalView: 'desc' },
                 { avgRating: 'desc' },
             ],
         });
 
-        // Calculate trending score (simple algorithm)
-        const data = products.map((product) => ({
+        // 1. Transformasi array tags agar lebih rapi
+        const productsWithFlatTags = products.map((product) => ({
+            ...product,
+            tags: product.tags.map((pt) => pt.tag),
+        }));
+
+        // 2. Hitung trending score
+        const dataWithScore = productsWithFlatTags.map((product) => ({
             ...product,
             trendingScore: (product.totalView / 100) + (product.avgRating || 0) * 2,
         }));
 
-        // Sort by trending score
-        data.sort((a, b) => b.trendingScore - a.trendingScore);
+        // 3. Urutkan berdasarkan trending score
+        dataWithScore.sort((a, b) => b.trendingScore - a.trendingScore);
 
-        return { data };
+        // 4. Ambil sesuai limit akhir
+        const finalData = dataWithScore.slice(0, limit);
+
+        return { data: finalData };
     }
 
 
