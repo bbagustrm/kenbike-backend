@@ -8,6 +8,7 @@ import { UserModule } from './user/user.module';
 import { ProductModule } from './product/product.module';
 import {CategoryModule} from "./category/category.module";
 import {TagModule} from "./tag/tag.module";
+import {PromotionModule} from "./promotion/promotion.module";
 
 @Module({
   imports: [
@@ -23,7 +24,8 @@ import {TagModule} from "./tag/tag.module";
     ]),
     ProductModule,
     CategoryModule,
-      TagModule
+    TagModule,
+    PromotionModule
   ],
   controllers: [AppController],
   providers: [
