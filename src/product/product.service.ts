@@ -6,7 +6,6 @@ import {
     Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
-import { SupabaseService } from '../common/supabase/supabase.service';
 import { PaginationUtil } from '../utils/pagination.util';
 import { GetProductsDto } from './dto/get-products.dto';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -14,12 +13,13 @@ import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Prisma } from '@prisma/client';
 import {UpdateProductDto} from "./dto/update-product.dto";
+import { LocalStorageService } from '../common/storage/local-storage.service';
 
 @Injectable()
 export class ProductService {
     constructor(
         private prisma: PrismaService,
-        private supabaseService: SupabaseService,
+        private localStorageService: LocalStorageService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
@@ -375,7 +375,7 @@ export class ProductService {
         // Upload main image if provided
         let imageUrl = dto.imageUrl;
         if (mainImageFile) {
-            const uploadResult = await this.supabaseService.uploadImage(
+            const uploadResult = await this.localStorageService.uploadImage(
                 mainImageFile,
                 'products',
             );
@@ -795,19 +795,18 @@ export class ProductService {
             }
         }
 
-        // Upload new main image if provided
         let imageUrl = dto.imageUrl;
         if (mainImageFile) {
             // Delete old image if exists
             if (existingProduct.imageUrl) {
-                await this.supabaseService
+                await this.localStorageService
                     .deleteImage(existingProduct.imageUrl)
                     .catch(() => {
                         this.logger.warn('Failed to delete old product image');
                     });
             }
 
-            const uploadResult = await this.supabaseService.uploadImage(
+            const uploadResult = await this.localStorageService.uploadImage(
                 mainImageFile,
                 'products',
             );
@@ -1042,7 +1041,7 @@ export class ProductService {
         // Delete main product image
         if (product.imageUrl) {
             imageDeletionPromises.push(
-                this.supabaseService.deleteImage(product.imageUrl).catch(() => {
+                this.localStorageService.deleteImage(product.imageUrl).catch(() => {
                     this.logger.warn('Failed to delete product image');
                 }),
             );
@@ -1052,7 +1051,7 @@ export class ProductService {
         for (const variant of product.variants) {
             for (const image of variant.images) {
                 imageDeletionPromises.push(
-                    this.supabaseService.deleteImage(image.imageUrl).catch(() => {
+                    this.localStorageService.deleteImage(image.imageUrl).catch(() => {
                         this.logger.warn('Failed to delete variant image');
                     }),
                 );

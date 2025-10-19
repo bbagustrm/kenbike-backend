@@ -9,6 +9,7 @@ import { ProductModule } from './product/product.module';
 import {CategoryModule} from "./category/category.module";
 import {TagModule} from "./tag/tag.module";
 import {PromotionModule} from "./promotion/promotion.module";
+import { StorageModule } from './common/storage/storage.module';
 
 @Module({
   imports: [
@@ -25,7 +26,8 @@ import {PromotionModule} from "./promotion/promotion.module";
     ProductModule,
     CategoryModule,
     TagModule,
-    PromotionModule
+    PromotionModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [

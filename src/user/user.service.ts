@@ -15,11 +15,13 @@ import { ChangeRoleDto } from './dto/change-role.dto';
 import { ChangeStatusDto } from './dto/change-status.dto';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import {LocalStorageService} from "../common/storage/local-storage.service";
 
 @Injectable()
 export class UserService {
     constructor(
         private prisma: PrismaService,
+        private localStorageService: LocalStorageService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
@@ -219,18 +221,21 @@ export class UserService {
     /**
      * Update user (Admin only)
      */
-    async updateUser(userId: string, dto: UpdateUserDto) {
-        // Check if user exists
-        const existingUser = await this.prisma.user.findUnique({
+    async updateUser(
+        userId: string,
+        dto: UpdateUserDto,
+        file?: Express.Multer.File,
+    ) {
+        const user = await this.prisma.user.findUnique({
             where: { id: userId, deletedAt: null },
         });
 
-        if (!existingUser) {
+        if (!user) {
             throw new NotFoundException('User not found');
         }
 
         // Check if email is being changed and already exists
-        if (dto.email && dto.email !== existingUser.email) {
+        if (dto.email && dto.email !== user.email) {
             const emailExists = await this.prisma.user.findUnique({
                 where: { email: dto.email },
             });
@@ -248,16 +253,37 @@ export class UserService {
             }
         }
 
-        // Update user
-        const user = await this.prisma.user.update({
+        // Upload new profile image if provided
+        let profileImage = user.profileImage;
+        if (file) {
+            // Delete old profile image if exists
+            if (user.profileImage) {
+                await this.localStorageService
+                    .deleteImage(user.profileImage)
+                    .catch(() => {
+                        this.logger.warn('Failed to delete old profile image');
+                    });
+            }
+
+            // Upload new image
+            const uploadResult = await this.localStorageService.uploadImage(
+                file,
+                'profiles',
+            );
+            profileImage = uploadResult.url;
+        }
+
+        // Update user profile
+        const updatedUser = await this.prisma.user.update({
             where: { id: userId },
             data: {
                 ...(dto.first_name && { firstName: dto.first_name }),
                 ...(dto.last_name && { lastName: dto.last_name }),
                 ...(dto.email && { email: dto.email }),
-                ...(dto.phone_number && { phoneNumber: dto.phone_number }),
-                ...(dto.address && { address: dto.address }),
-                ...(dto.country && { country: dto.country }),
+                ...(dto.phone_number !== undefined && { phoneNumber: dto.phone_number }),
+                ...(dto.address !== undefined && { address: dto.address }),
+                ...(dto.country !== undefined && { country: dto.country }),
+                ...(profileImage && { profileImage }),
             },
             select: {
                 id: true,
@@ -267,23 +293,29 @@ export class UserService {
                 phoneNumber: true,
                 address: true,
                 country: true,
+                profileImage: true,
+                role: true,
+                createdAt: true,
                 updatedAt: true,
             },
         });
 
-        this.logger.info(`User updated by admin: ${user.email}`);
+        this.logger.info(`✅ User profile updated: ${updatedUser.email}`);
 
         return {
-            message: 'User updated successfully',
+            message: 'Profile updated successfully',
             data: {
-                id: user.id,
-                first_name: user.firstName,
-                last_name: user.lastName,
-                email: user.email,
-                phone_number: user.phoneNumber,
-                address: user.address,
-                country: user.country,
-                updated_at: user.updatedAt,
+                id: updatedUser.id,
+                first_name: updatedUser.firstName,
+                last_name: updatedUser.lastName,
+                email: updatedUser.email,
+                phone_number: updatedUser.phoneNumber,
+                address: updatedUser.address,
+                country: updatedUser.country,
+                profile_image: updatedUser.profileImage,
+                role: updatedUser.role,
+                created_at: updatedUser.createdAt,
+                updated_at: updatedUser.updatedAt,
             },
         };
     }
