@@ -4,7 +4,7 @@ import {
     UnauthorizedException,
     NotFoundException,
     Inject,
-    InternalServerErrorException,
+    InternalServerErrorException, BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
@@ -19,11 +19,14 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import {UpdateUserDto} from "../user/dto/update-user.dto";
+import {LocalStorageService} from "../common/storage/local-storage.service";
 
 @Injectable()
 export class AuthService {
     constructor(
         private prisma: PrismaService,
+        private localStorageService: LocalStorageService,
         private configService: ConfigService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
@@ -437,22 +440,64 @@ export class AuthService {
     /**
      * Update user profile
      */
-    async updateProfile(userId: string, dto: UpdateProfileDto, file?: Express.Multer.File) {
+    /**
+     * Update user profile
+     * @param userId - User ID
+     * @param dto - Update profile DTO
+     * @param file - Optional profile image file
+     */
+    async updateProfile(
+        userId: string,
+        dto: UpdateProfileDto,
+        file?: Express.Multer.File,
+    ) {
         let profileImageUrl: string | undefined;
+
+        // Get current user to check for existing profile image
+        const currentUser = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { profileImage: true },
+        });
 
         // Handle file upload if provided
         if (file) {
-            // TODO: Upload file to storage (S3, Cloudinary, etc)
-            // For now, just use a placeholder URL
-            profileImageUrl = `https://cdn.site.com/profile/${file.filename}`;
+            this.logger.info('📤 Uploading profile image...', {
+                filename: file.originalname,
+                size: file.size,
+                mimetype: file.mimetype,
+            });
+
+            try {
+                // Delete old profile image if exists
+                if (currentUser?.profileImage) {
+                    await this.localStorageService
+                        .deleteImage(currentUser.profileImage)
+                        .catch(() => {
+                            this.logger.warn('Failed to delete old profile image');
+                        });
+                }
+
+                // Upload new image using LocalStorageService
+                const uploadResult = await this.localStorageService.uploadImage(
+                    file,
+                    'profiles',
+                );
+
+                profileImageUrl = uploadResult.url;
+                this.logger.info(`✅ Profile image uploaded: ${profileImageUrl}`);
+            } catch (uploadError) {
+                this.logger.error('❌ Upload failed:', uploadError);
+                throw new BadRequestException('Failed to upload profile image');
+            }
         }
 
+        // Update user in database
         const user = await this.prisma.user.update({
             where: { id: userId },
             data: {
-                ...(dto.phone_number && { phoneNumber: dto.phone_number }),
-                ...(dto.address && { address: dto.address }),
-                ...(dto.country && { country: dto.country }),
+                ...(dto.phone_number !== undefined && { phoneNumber: dto.phone_number }),
+                ...(dto.address !== undefined && { address: dto.address }),
+                ...(dto.country !== undefined && { country: dto.country }),
                 ...(profileImageUrl && { profileImage: profileImageUrl }),
             },
             select: {
@@ -477,6 +522,7 @@ export class AuthService {
             },
         };
     }
+
 
     /**
      * Update password
