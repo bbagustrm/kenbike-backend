@@ -10,7 +10,7 @@ import {
     UseGuards,
     HttpCode,
     HttpStatus,
-    ParseBoolPipe,
+    ParseBoolPipe, UseInterceptors,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { ValidationService } from '../common/validation.service';
@@ -26,6 +26,7 @@ import { CreateUserDto, CreateUserSchema } from './dto/create-user.dto';
 import { UpdateUserDto, UpdateUserSchema } from './dto/update-user.dto';
 import { ChangeRoleDto, ChangeRoleSchema } from './dto/change-role.dto';
 import { ChangeStatusDto, ChangeStatusSchema } from './dto/change-status.dto';
+import {FileInterceptor} from "@nestjs/platform-express";
 
 @Controller('admin/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -73,6 +74,13 @@ export class UserController {
      */
     @Roles(Role.ADMIN)
     @Patch(':id')
+    @UseInterceptors(
+        FileInterceptor('profile_image', {
+            limits: {
+                fileSize: 2 * 1024 * 1024, // 2MB
+            },
+        }),
+    )
     async updateUser(@Param('id') userId: string, @Body() body: UpdateUserDto) {
         const dto = this.validationService.validate(UpdateUserSchema, body);
         return this.userService.updateUser(userId, dto);
