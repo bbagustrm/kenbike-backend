@@ -10,6 +10,12 @@ services:
     depends_on:
       - db
     restart: always
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    environment:
+      UPLOAD_DIR: /app/uploads
+      BASE_URL: http://kenbike.store
     command: sh -c "npx prisma migrate deploy && node dist/main.js"
 
   db:
