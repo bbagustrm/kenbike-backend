@@ -59,21 +59,59 @@ export class LocalStorageService {
                 throw new BadRequestException('File size must not exceed 2MB');
             }
 
+            // Generate filename
             const ext = path.extname(file.originalname);
             const filename = `${uuidv4()}${ext}`;
-            const folderPath = path.join(this.uploadDir, folder);
+
+            // Use ABSOLUTE path
+            const absoluteUploadDir = path.resolve(this.uploadDir);
+            const folderPath = path.join(absoluteUploadDir, folder);
             const filePath = path.join(folderPath, filename);
+
+            if (!existsSync(folderPath)) {
+                this.logger.error(`❌ Folder does not exist: ${folderPath}`);
+                mkdirSync(folderPath, { recursive: true });
+                this.logger.info(`📁 Created folder: ${folderPath}`);
+            }
+
+            this.logger.info('📤 About to write file:', {
+                originalname: file.originalname,
+                size: file.size,
+                filename,
+                folderPath,
+                filePath,
+                folderExists: existsSync(folderPath),
+                canWrite: true, // We'll check this
+            });
 
             await fs.writeFile(filePath, file.buffer);
 
+            const fileExists = existsSync(filePath);
+            this.logger.info(`File write result:`, {
+                filePath,
+                exists: fileExists,
+                size: fileExists ? (await fs.stat(filePath)).size : 0,
+            });
+
+            if (!fileExists) {
+                throw new BadRequestException('File was not written to disk');
+            }
+
+            // Generate public URL - use BASE_URL directly
             const url = `${this.baseUrl}/uploads/${folder}/${filename}`;
 
-            this.logger.info(`✅ Image uploaded: ${url}`);
+            this.logger.info(`✅ Upload complete:`, {
+                url,
+                filePath,
+            });
 
             return { url, path: filePath };
         } catch (error) {
-            this.logger.error('Failed to upload image', error);
-            throw new BadRequestException('Failed to upload image');
+            this.logger.error('❌ Upload failed:', {
+                error: error.message,
+                stack: error.stack,
+            });
+            throw new BadRequestException(`Failed to upload image: ${error.message}`);
         }
     }
 
