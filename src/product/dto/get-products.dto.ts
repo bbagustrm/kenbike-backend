@@ -53,6 +53,10 @@ export const GetProductsSchema = z.object({
         .string()
         .optional()
         .transform((val) => val === 'true'),
+    onlyDeleted: z
+        .string()
+        .optional()
+        .transform((val) => val === 'true'),
     isActive: z
         .string()
         .optional()

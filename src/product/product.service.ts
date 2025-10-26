@@ -42,6 +42,7 @@ export class ProductService {
             sortBy,
             order,
             includeDeleted,
+            onlyDeleted,
             isActive,
         } = dto;
 
@@ -51,16 +52,22 @@ export class ProductService {
         // Build where clause
         const where: Prisma.ProductWhereInput = {};
 
-        // Soft delete filter
-        if (!isAdmin || !includeDeleted) {
+        // Soft delete filter - Perbaikan logika ini
+        if (onlyDeleted) {
+            // Jika onlyDeleted true, hanya tampilkan produk yang sudah dihapus
+            where.deletedAt = { not: null };
+        } else if (!isAdmin || !includeDeleted) {
+            // Jika bukan admin atau includeDeleted false, hanya tampilkan produk yang belum dihapus
             where.deletedAt = null;
         }
+        // Jika admin dan includeDeleted true, tampilkan semua produk (terhapus dan belum terhapus)
 
         // Active filter
         if (isActive !== undefined) {
             where.isActive = isActive;
-        } else if (!isAdmin) {
-            where.isActive = true; // Public only sees active products
+        } else if (!isAdmin && !onlyDeleted) { // Tambahkan !onlyDeleted di sini
+            // Public only sees active products, kecuali untuk tab deleted
+            where.isActive = true;
         }
 
         // Search filter
