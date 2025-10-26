@@ -41,10 +41,10 @@ export class CategoryService {
         }
 
         // Active filter
-        if (isActive !== undefined) {
-            where.isActive = isActive;
-        } else if (!isAdmin) {
-            where.isActive = true; // Public only sees active categories
+        if (!isAdmin) {
+            where.isActive = true; // Public only
+        } else if (isActive !== undefined) {
+            where.isActive = isActive; // Admin optional filter
         }
 
         // Search filter
