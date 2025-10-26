@@ -38,7 +38,12 @@ export const GetProductsSchema = z.object({
     isPreOrder: z
         .string()
         .optional()
-        .transform((val) => val === 'true'),
+        .transform((val) => {
+            if (!val) return undefined;
+            if (val === 'true') return true;
+            if (val === 'false') return false;
+            return undefined;
+        }),
     sortBy: z
         .enum(['name', 'idPrice', 'enPrice', 'totalSold', 'totalView', 'avgRating', 'createdAt'])
         .optional()
