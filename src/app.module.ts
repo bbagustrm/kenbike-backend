@@ -10,6 +10,7 @@ import {CategoryModule} from "./category/category.module";
 import {TagModule} from "./tag/tag.module";
 import {PromotionModule} from "./promotion/promotion.module";
 import { StorageModule } from './common/storage/storage.module';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { StorageModule } from './common/storage/storage.module';
     TagModule,
     PromotionModule,
     StorageModule,
+    UploadModule,
   ],
   controllers: [AppController],
   providers: [
