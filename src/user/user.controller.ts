@@ -60,7 +60,6 @@ export class UserController {
      * POST /admin/users
      * Create new user (Admin only)
      */
-    @Roles(Role.ADMIN)
     @Post()
     @HttpCode(HttpStatus.CREATED)
     async createUser(@Body() body: CreateUserDto) {
@@ -72,7 +71,6 @@ export class UserController {
      * PATCH /admin/users/:id
      * Update user (Admin only)
      */
-    @Roles(Role.ADMIN)
     @Patch(':id')
     @UseInterceptors(
         FileInterceptor('profile_image', {
@@ -90,7 +88,6 @@ export class UserController {
      * PATCH /admin/users/:id/role
      * Change user role (Admin only)
      */
-    @Roles(Role.ADMIN)
     @Patch(':id/role')
     async changeUserRole(@Param('id') userId: string, @Body() body: ChangeRoleDto) {
         const dto = this.validationService.validate(ChangeRoleSchema, body);
@@ -101,7 +98,6 @@ export class UserController {
      * PATCH /admin/users/:id/status
      * Change user status - suspend/activate (Admin only)
      */
-    @Roles(Role.ADMIN)
     @Patch(':id/status')
     async changeUserStatus(
         @Param('id') userId: string,
@@ -116,7 +112,6 @@ export class UserController {
      * DELETE /admin/users/:id
      * Delete user (soft or hard delete) (Admin only)
      */
-    @Roles(Role.ADMIN)
     @Delete(':id')
     async deleteUser(
         @Param('id') userId: string,
@@ -130,7 +125,6 @@ export class UserController {
      * POST /admin/users/:id/force-logout
      * Force logout user from all devices (Admin only)
      */
-    @Roles(Role.ADMIN)
     @Post(':id/force-logout')
     @HttpCode(HttpStatus.OK)
     async forceLogoutUser(@Param('id') userId: string) {
