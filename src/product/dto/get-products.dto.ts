@@ -44,6 +44,15 @@ export const GetProductsSchema = z.object({
             if (val === 'false') return false;
             return undefined;
         }),
+    hasPromotion: z
+        .string()
+        .optional()
+        .transform((val) => {
+            if (!val) return undefined;
+            if (val === 'true') return true;
+            if (val === 'false') return false;
+            return undefined;
+        }),
     sortBy: z
         .enum(['name', 'idPrice', 'enPrice', 'totalSold', 'totalView', 'avgRating', 'createdAt'])
         .optional()
