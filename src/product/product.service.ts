@@ -25,6 +25,7 @@ export class ProductService {
 
     /**
      * GET ALL PRODUCTS (Public & Admin)
+     * Updated to support hasPromotion filter
      */
     async getAllProducts(dto: GetProductsDto, isAdmin: boolean = false) {
         const {
@@ -39,6 +40,7 @@ export class ProductService {
             maxPrice,
             isFeatured,
             isPreOrder,
+            hasPromotion,
             sortBy,
             order,
             includeDeleted,
@@ -103,6 +105,17 @@ export class ProductService {
         // Pre-order filter
         if (isPreOrder !== undefined) {
             where.isPreOrder = isPreOrder;
+        }
+
+        // Promotion filter (NEW)
+        if (hasPromotion !== undefined) {
+            if (hasPromotion) {
+                // Only products with promotion
+                where.promotionId = { not: null };
+            } else {
+                // Only products without promotion
+                where.promotionId = null;
+            }
         }
 
         // Get total count
