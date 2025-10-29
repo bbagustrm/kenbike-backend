@@ -13,13 +13,16 @@ async function bootstrap() {
 
   app.use(helmet());
 
+  const allowedOrigins = process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(',')
+      : ['http://localhost:3000'];
+
   app.enableCors({
-    origin: '*',
+    origin: allowedOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
 
-  // Set global prefix untuk semua routes
   app.setGlobalPrefix('api/v1');
 
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
