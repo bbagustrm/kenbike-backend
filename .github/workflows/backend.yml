@@ -1,4 +1,4 @@
-name: CI/CD
+name: CI/CD Backend
 
 on:
   push:
@@ -46,7 +46,7 @@ jobs:
           passphrase: ${{ secrets.VPS_SSH_PASSPHRASE }}
           port: 54321
           script: |
-            cd /root/kenbike-backend
+            cd /var/www/kenbike/backend
             docker compose pull
             docker compose down
             docker compose up -d
