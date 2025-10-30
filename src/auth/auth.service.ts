@@ -12,15 +12,14 @@ import { PasswordUtil } from '../utils/password.util';
 import { TokenUtil, JwtPayload } from '../utils/token.util';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
-import {UpdateUserDto} from "../user/dto/update-user.dto";
 import {LocalStorageService} from "../common/storage/local-storage.service";
+import { Request } from 'express';
 
 @Injectable()
 export class AuthService {
@@ -227,31 +226,38 @@ export class AuthService {
     /**
      * Refresh access token
      */
-    async refreshToken(dto: RefreshTokenDto) {
+    async refreshToken(req: Request) {
         const { jwtSecret, accessTokenExpiry } = this.getJwtConfig();
+
+        // >>> PERUBAHAN: Ambil refresh_token dari cookie, bukan dari DTO <<<
+        const refreshTokenValue = req.cookies?.refresh_token;
+
+        if (!refreshTokenValue) {
+            throw new UnauthorizedException('Refresh token not found in cookies');
+        }
 
         // Verify refresh token
         let payload: JwtPayload;
         try {
-            payload = TokenUtil.verifyToken<JwtPayload>(dto.refresh_token, jwtSecret);
+            payload = TokenUtil.verifyToken<JwtPayload>(refreshTokenValue, jwtSecret);
         } catch (error) {
             throw new UnauthorizedException('Invalid or expired refresh token');
         }
 
         // Check if refresh token exists in database
-        const refreshToken = await this.prisma.refreshToken.findUnique({
-            where: { token: dto.refresh_token },
+        const refreshTokenRecord = await this.prisma.refreshToken.findUnique({
+            where: { token: refreshTokenValue }, // Gunakan token dari cookie
         });
 
-        if (!refreshToken) {
+        if (!refreshTokenRecord) {
             throw new UnauthorizedException('Invalid or expired refresh token');
         }
 
         // Check if refresh token is expired
-        if (refreshToken.expiresAt < new Date()) {
+        if (refreshTokenRecord.expiresAt < new Date()) {
             // Delete expired token
             await this.prisma.refreshToken.delete({
-                where: { token: dto.refresh_token },
+                where: { token: refreshTokenValue }, // Gunakan token dari cookie
             });
             throw new UnauthorizedException('Refresh token has expired');
         }
@@ -375,7 +381,7 @@ export class AuthService {
      * Logout - Blacklist current token
      */
     async logout(userId: string, token: string) {
-        const { jwtSecret, accessTokenExpiry } = this.getJwtConfig();
+        const { accessTokenExpiry } = this.getJwtConfig();
 
         // Blacklist the token
         await this.prisma.blacklistedToken.create({
