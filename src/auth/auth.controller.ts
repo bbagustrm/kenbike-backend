@@ -108,15 +108,13 @@ export class AuthController {
     @Post('logout')
     @HttpCode(HttpStatus.OK)
     async logout(@CurrentUser('id') userId: string, @Req() req: Request) {
-        const authHeader = req.headers.authorization;
+        const token = req.cookies?.access_token;
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            throw new BadRequestException('Authorization header with Bearer token is required');
+        if (!token) {
+            throw new BadRequestException('Access token cookie is required');
         }
 
-        const token = authHeader.replace('Bearer ', '');
         return this.authService.logout(userId, token);
-
     }
 
     /**
