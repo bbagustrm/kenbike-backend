@@ -25,7 +25,6 @@ import { Throttle } from '@nestjs/throttler';
 // DTOs
 import { RegisterDto, RegisterSchema } from './dto/register.dto';
 import { LoginDto, LoginSchema } from './dto/login.dto';
-import { RefreshTokenDto, RefreshTokenSchema } from './dto/refresh-token.dto';
 import { ForgotPasswordDto, ForgotPasswordSchema } from './dto/forgot-password.dto';
 import { ResetPasswordDto, ResetPasswordSchema } from './dto/reset-password.dto';
 import { UpdateProfileDto, UpdateProfileSchema } from './dto/update-profile.dto';
@@ -70,9 +69,10 @@ export class AuthController {
     @Public()
     @Post('refresh')
     @HttpCode(HttpStatus.OK)
-    async refreshToken(@Body() body: RefreshTokenDto) {
-        const dto = this.validationService.validate(RefreshTokenSchema, body);
-        return this.authService.refreshToken(dto);
+    async refreshToken(@Req() req: Request) {
+        // >>> PERUBAHAN: Langsung kirim Request object ke service.
+        // Kita tidak lagi membutuhkan validasi DTO karena token ada di cookie.
+        return this.authService.refreshToken(req);
     }
 
     /**
