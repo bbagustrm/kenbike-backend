@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Request } from 'express'; // Impor tipe Request
 import { PrismaService } from '../../common/prisma.service';
 import { JwtPayload } from '../interfaces/jwt-payload.interfaces';
 
@@ -18,11 +19,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         }
 
         super({
-            jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+            jwtFromRequest: ExtractJwt.fromExtractors([
+                JwtStrategy.extractJWTFromCookie,
+            ]),
             ignoreExpiration: false,
             secretOrKey: jwtSecret,
         });
+    }
 
+    // >>> TAMBAHKAN FUNGSI STATIS INI UNTUK MENGAMBIL TOKEN DARI COOKIE <<<
+    private static extractJWTFromCookie(req: Request): string | null {
+        if (req.cookies && 'access_token' in req.cookies) {
+            return req.cookies.access_token;
+        }
+        return null;
     }
 
     async validate(payload: JwtPayload): Promise<JwtPayload> {
