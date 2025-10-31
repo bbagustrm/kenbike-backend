@@ -53,60 +53,69 @@ export class AuthController {
 
     /**
      * POST /auth/login
-     * Login user
-     * ✅ PERBAIKAN: Inject Response untuk set cookie
+     * ✅ CRITICAL: Inject Response untuk set cookie
      */
     @Public()
     @Throttle({ default: { limit: 5, ttl: 60000 } })
     @Post('login')
     @HttpCode(HttpStatus.OK)
-    async login(@Body() body: LoginDto, @Res({ passthrough: true }) res: Response) {
+    async login(
+        @Body() body: LoginDto,
+        @Res({ passthrough: true }) res: Response,
+    ) {
         const dto = this.validationService.validate(LoginSchema, body);
         const result = await this.authService.login(dto);
 
+        // ✅ Cookie configuration
         const cookieOptions = {
             httpOnly: true,
-            secure: true, // ✅ ENABLE untuk HTTPS
+            secure: true, // HTTPS
             sameSite: 'lax' as const,
-            domain: '.kenbike.store', // ✅ Leading dot work di HTTPS
+            domain: '.kenbike.store',
             path: '/',
         };
 
-        // Set access_token (15 menit)
+        // ✅ Set access_token cookie
         res.cookie('access_token', result.data.access_token, {
             ...cookieOptions,
             maxAge: 15 * 60 * 1000, // 15 minutes
         });
 
-        // Set refresh_token (7 hari)
+        // ✅ Set refresh_token cookie
         res.cookie('refresh_token', result.data.refresh_token, {
             ...cookieOptions,
             maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         });
+
+        console.log('✅ Cookies set for user:', result.data.user.email);
 
         return result;
     }
 
     /**
      * POST /auth/refresh
-     * Refresh access token
-     * ✅ PERBAIKAN: Inject Response untuk update cookie
+     * ✅ CRITICAL: Inject Response untuk update access_token cookie
      */
     @Public()
     @Post('refresh')
     @HttpCode(HttpStatus.OK)
-    async refreshToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    async refreshToken(
+        @Req() req: Request,
+        @Res({ passthrough: true }) res: Response,
+    ) {
         const result = await this.authService.refreshToken(req);
 
-        // ✅ UPDATE ACCESS TOKEN COOKIE
+        // ✅ Update access_token cookie
         res.cookie('access_token', result.data.access_token, {
             httpOnly: true,
-            secure: false,
+            secure: true,
             sameSite: 'lax',
-            domain: 'kenbike.store', // ❌ HAPUS titik!
+            domain: '.kenbike.store',
             path: '/',
             maxAge: 15 * 60 * 1000,
         });
+
+        console.log('✅ Access token refreshed');
 
         return result;
     }
@@ -162,7 +171,7 @@ export class AuthController {
             httpOnly: true,
             secure: false,
             sameSite: 'lax' as const,
-            domain: 'kenbike.store', // ❌ HAPUS titik!
+            domain: '.kenbike.store', // ❌ HAPUS titik!
             path: '/',
         };
 
