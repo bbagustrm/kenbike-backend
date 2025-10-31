@@ -7,13 +7,15 @@ import {
     Body,
     UseGuards,
     Req,
+    Res,
     UseInterceptors,
     UploadedFile,
     HttpCode,
-    HttpStatus, BadRequestException,
+    HttpStatus,
+    BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { ValidationService } from '../common/validation.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -52,14 +54,37 @@ export class AuthController {
     /**
      * POST /auth/login
      * Login user
+     * ✅ PERBAIKAN: Inject Response untuk set cookie
      */
     @Public()
-    @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 requests per minute
+    @Throttle({ default: { limit: 5, ttl: 60000 } })
     @Post('login')
     @HttpCode(HttpStatus.OK)
-    async login(@Body() body: LoginDto) {
+    async login(@Body() body: LoginDto, @Res({ passthrough: true }) res: Response) {
         const dto = this.validationService.validate(LoginSchema, body);
-        return this.authService.login(dto);
+        const result = await this.authService.login(dto);
+
+        const cookieOptions = {
+            httpOnly: true,
+            secure: false, // Set true jika sudah HTTPS
+            sameSite: 'lax' as const,
+            domain: '.kenbike.store',
+            path: '/',
+        };
+
+        // Set access_token (15 menit)
+        res.cookie('access_token', result.data.access_token, {
+            ...cookieOptions,
+            maxAge: 15 * 60 * 1000, // 15 minutes
+        });
+
+        // Set refresh_token (7 hari)
+        res.cookie('refresh_token', result.data.refresh_token, {
+            ...cookieOptions,
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        });
+
+        return result;
     }
 
     /**
@@ -69,10 +94,19 @@ export class AuthController {
     @Public()
     @Post('refresh')
     @HttpCode(HttpStatus.OK)
-    async refreshToken(@Req() req: Request) {
-        // >>> PERUBAHAN: Langsung kirim Request object ke service.
-        // Kita tidak lagi membutuhkan validasi DTO karena token ada di cookie.
-        return this.authService.refreshToken(req);
+    async refreshToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+        const result = await this.authService.refreshToken(req);
+
+        res.cookie('access_token', result.data.access_token, {
+            httpOnly: true,
+            secure: false,
+            sameSite: 'lax',
+            domain: '.kenbike.store',
+            path: '/',
+            maxAge: 15 * 60 * 1000,
+        });
+
+        return result;
     }
 
     /**
@@ -80,7 +114,7 @@ export class AuthController {
      * Send password reset email
      */
     @Public()
-    @Throttle({ default: { limit: 3, ttl: 300000 } }) // 3 requests per 5 minutes
+    @Throttle({ default: { limit: 3, ttl: 300000 } })
     @Post('forgot-password')
     @HttpCode(HttpStatus.OK)
     async forgotPassword(@Body() body: ForgotPasswordDto) {
@@ -107,14 +141,31 @@ export class AuthController {
     @UseGuards(JwtAuthGuard)
     @Post('logout')
     @HttpCode(HttpStatus.OK)
-    async logout(@CurrentUser('id') userId: string, @Req() req: Request) {
+    async logout(
+        @CurrentUser('id') userId: string,
+        @Req() req: Request,
+        @Res({ passthrough: true }) res: Response,
+    ) {
         const token = req.cookies?.access_token;
 
         if (!token) {
             throw new BadRequestException('Access token cookie is required');
         }
 
-        return this.authService.logout(userId, token);
+        const result = await this.authService.logout(userId, token);
+
+        const clearOptions = {
+            httpOnly: true,
+            secure: false,
+            sameSite: 'lax' as const,
+            domain: '.kenbike.store',
+            path: '/',
+        };
+
+        res.clearCookie('access_token', clearOptions);
+        res.clearCookie('refresh_token', clearOptions);
+
+        return result;
     }
 
     /**
@@ -137,7 +188,7 @@ export class AuthController {
         FileInterceptor('profile_image', {
             fileFilter: FileUploadUtil.imageFileFilter,
             limits: {
-                fileSize: 2 * 1024 * 1024, // 2MB
+                fileSize: 2 * 1024 * 1024,
             },
         }),
     )
@@ -146,7 +197,6 @@ export class AuthController {
         @Body() body: UpdateProfileDto,
         @UploadedFile() file?: Express.Multer.File,
     ) {
-        // Validate file if uploaded
         if (file) {
             FileUploadUtil.validateImageFile(file);
         }
@@ -177,5 +227,30 @@ export class AuthController {
     @Delete('profile-image')
     async deleteProfileImage(@CurrentUser('id') userId: string) {
         return this.authService.deleteProfileImage(userId);
+    }
+
+    /**
+     * GET /auth/debug-cookies
+     * Debug endpoint to check cookies
+     * ⚠️ HAPUS SETELAH TESTING!
+     */
+    @Public()
+    @Get('debug-cookies')
+    debugCookies(@Req() req: Request) {
+        return {
+            message: 'Cookie debug info',
+            data: {
+                cookies: req.cookies || {},
+                rawCookie: req.headers.cookie || 'No cookie header',
+                hasAccessToken: !!req.cookies?.access_token,
+                hasRefreshToken: !!req.cookies?.refresh_token,
+                headers: {
+                    host: req.headers.host,
+                    origin: req.headers.origin,
+                    referer: req.headers.referer,
+                    'user-agent': req.headers['user-agent'],
+                },
+            },
+        };
     }
 }
