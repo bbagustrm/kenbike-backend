@@ -66,9 +66,9 @@ export class AuthController {
 
         const cookieOptions = {
             httpOnly: true,
-            secure: false, // Set true jika sudah HTTPS
+            secure: true, // ✅ ENABLE untuk HTTPS
             sameSite: 'lax' as const,
-            domain: '.kenbike.store',
+            domain: '.kenbike.store', // ✅ Leading dot work di HTTPS
             path: '/',
         };
 
@@ -90,6 +90,7 @@ export class AuthController {
     /**
      * POST /auth/refresh
      * Refresh access token
+     * ✅ PERBAIKAN: Inject Response untuk update cookie
      */
     @Public()
     @Post('refresh')
@@ -97,11 +98,12 @@ export class AuthController {
     async refreshToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
         const result = await this.authService.refreshToken(req);
 
+        // ✅ UPDATE ACCESS TOKEN COOKIE
         res.cookie('access_token', result.data.access_token, {
             httpOnly: true,
             secure: false,
             sameSite: 'lax',
-            domain: '.kenbike.store',
+            domain: 'kenbike.store', // ❌ HAPUS titik!
             path: '/',
             maxAge: 15 * 60 * 1000,
         });
@@ -137,6 +139,7 @@ export class AuthController {
     /**
      * POST /auth/logout
      * Logout and blacklist token
+     * ✅ PERBAIKAN: Clear cookies
      */
     @UseGuards(JwtAuthGuard)
     @Post('logout')
@@ -154,11 +157,12 @@ export class AuthController {
 
         const result = await this.authService.logout(userId, token);
 
+        // ✅ CLEAR COOKIES
         const clearOptions = {
             httpOnly: true,
             secure: false,
             sameSite: 'lax' as const,
-            domain: '.kenbike.store',
+            domain: 'kenbike.store', // ❌ HAPUS titik!
             path: '/',
         };
 
@@ -227,30 +231,5 @@ export class AuthController {
     @Delete('profile-image')
     async deleteProfileImage(@CurrentUser('id') userId: string) {
         return this.authService.deleteProfileImage(userId);
-    }
-
-    /**
-     * GET /auth/debug-cookies
-     * Debug endpoint to check cookies
-     * ⚠️ HAPUS SETELAH TESTING!
-     */
-    @Public()
-    @Get('debug-cookies')
-    debugCookies(@Req() req: Request) {
-        return {
-            message: 'Cookie debug info',
-            data: {
-                cookies: req.cookies || {},
-                rawCookie: req.headers.cookie || 'No cookie header',
-                hasAccessToken: !!req.cookies?.access_token,
-                hasRefreshToken: !!req.cookies?.refresh_token,
-                headers: {
-                    host: req.headers.host,
-                    origin: req.headers.origin,
-                    referer: req.headers.referer,
-                    'user-agent': req.headers['user-agent'],
-                },
-            },
-        };
     }
 }
