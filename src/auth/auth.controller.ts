@@ -24,7 +24,6 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { FileUploadUtil } from '../utils/file-upload.util';
 import { Throttle } from '@nestjs/throttler';
 
-// DTOs
 import { RegisterDto, RegisterSchema } from './dto/register.dto';
 import { LoginDto, LoginSchema } from './dto/login.dto';
 import { ForgotPasswordDto, ForgotPasswordSchema } from './dto/forgot-password.dto';
@@ -41,7 +40,6 @@ export class AuthController {
 
     /**
      * POST /auth/register
-     * Register new user
      */
     @Public()
     @Post('register')
@@ -53,7 +51,6 @@ export class AuthController {
 
     /**
      * POST /auth/login
-     * ✅ CRITICAL: Inject Response untuk set cookie
      */
     @Public()
     @Throttle({ default: { limit: 5, ttl: 60000 } })
@@ -61,40 +58,41 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     async login(
         @Body() body: LoginDto,
+        @Req() req: Request,
         @Res({ passthrough: true }) res: Response,
     ) {
         const dto = this.validationService.validate(LoginSchema, body);
         const result = await this.authService.login(dto);
 
-        // ✅ Cookie configuration
+        const origin = req.headers.origin || '';
+        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+
         const cookieOptions = {
             httpOnly: true,
-            secure: true, // HTTPS
+            secure: !isLocalhost,
             sameSite: 'lax' as const,
-            domain: '.kenbike.store',
             path: '/',
+            ...(isLocalhost ? {} : { domain: '.kenbike.store' }),
         };
 
-        // ✅ Set access_token cookie
         res.cookie('access_token', result.data.access_token, {
             ...cookieOptions,
-            maxAge: 15 * 60 * 1000, // 15 minutes
+            maxAge: 15 * 60 * 1000,
         });
 
-        // ✅ Set refresh_token cookie
         res.cookie('refresh_token', result.data.refresh_token, {
             ...cookieOptions,
-            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+            maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
         console.log('✅ Cookies set for user:', result.data.user.email);
+        console.log('🌐 Origin:', origin, '| Localhost:', isLocalhost);
 
         return result;
     }
 
     /**
      * POST /auth/refresh
-     * ✅ CRITICAL: Inject Response untuk update access_token cookie
      */
     @Public()
     @Post('refresh')
@@ -105,14 +103,16 @@ export class AuthController {
     ) {
         const result = await this.authService.refreshToken(req);
 
-        // ✅ Update access_token cookie
+        const origin = req.headers.origin || '';
+        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+
         res.cookie('access_token', result.data.access_token, {
             httpOnly: true,
-            secure: true,
+            secure: !isLocalhost,
             sameSite: 'lax',
-            domain: '.kenbike.store',
             path: '/',
             maxAge: 15 * 60 * 1000,
+            ...(isLocalhost ? {} : { domain: '.kenbike.store' }),
         });
 
         console.log('✅ Access token refreshed');
@@ -122,7 +122,6 @@ export class AuthController {
 
     /**
      * POST /auth/forgot-password
-     * Send password reset email
      */
     @Public()
     @Throttle({ default: { limit: 3, ttl: 300000 } })
@@ -135,7 +134,6 @@ export class AuthController {
 
     /**
      * POST /auth/reset-password
-     * Reset password with token
      */
     @Public()
     @Post('reset-password')
@@ -147,8 +145,6 @@ export class AuthController {
 
     /**
      * POST /auth/logout
-     * Logout and blacklist token
-     * ✅ PERBAIKAN: Clear cookies
      */
     @UseGuards(JwtAuthGuard)
     @Post('logout')
@@ -166,24 +162,27 @@ export class AuthController {
 
         const result = await this.authService.logout(userId, token);
 
-        // ✅ CLEAR COOKIES
+        const origin = req.headers.origin || '';
+        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+
         const clearOptions = {
             httpOnly: true,
-            secure: false,
+            secure: !isLocalhost,
             sameSite: 'lax' as const,
-            domain: '.kenbike.store', // ❌ HAPUS titik!
             path: '/',
+            ...(isLocalhost ? {} : { domain: '.kenbike.store' }),
         };
 
         res.clearCookie('access_token', clearOptions);
         res.clearCookie('refresh_token', clearOptions);
+
+        console.log('✅ Cookies cleared for user:', userId);
 
         return result;
     }
 
     /**
      * GET /auth/me
-     * Get current user profile
      */
     @UseGuards(JwtAuthGuard)
     @Get('me')
@@ -193,7 +192,6 @@ export class AuthController {
 
     /**
      * PATCH /auth/profile
-     * Update user profile
      */
     @UseGuards(JwtAuthGuard)
     @Patch('profile')
@@ -220,7 +218,6 @@ export class AuthController {
 
     /**
      * PATCH /auth/password
-     * Update password
      */
     @UseGuards(JwtAuthGuard)
     @Patch('password')
@@ -234,7 +231,6 @@ export class AuthController {
 
     /**
      * DELETE /auth/profile-image
-     * Delete profile image
      */
     @UseGuards(JwtAuthGuard)
     @Delete('profile-image')
