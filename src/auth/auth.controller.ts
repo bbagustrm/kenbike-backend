@@ -47,7 +47,7 @@ export class AuthController {
     }
 
     /**
-     * ✅ FIXED: Proper localhost cookie handling with SameSite=None
+     * ✅ FIXED: Proper cookie configuration for localhost vs production
      */
     @Public()
     @Throttle({ default: { limit: 5, ttl: 60000 } })
@@ -64,14 +64,25 @@ export class AuthController {
         const origin = req.headers.origin || '';
         const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
 
-        // ✅ CHANGED: Use SameSite=None for localhost to allow cross-origin cookies
-        const cookieOptions = {
+        // ✅ CRITICAL FIX: Different cookie config for localhost vs production
+        const baseCookieOptions = {
             httpOnly: true,
-            secure: !isLocalhost, // false for localhost, true for production
-            sameSite: (isLocalhost ? 'none' : 'lax') as 'none' | 'lax',
             path: '/',
-            ...(isLocalhost ? {} : { domain: '.kenbike.store' }),
         };
+
+        const cookieOptions = isLocalhost
+            ? {
+                ...baseCookieOptions,
+                secure: false, // false for localhost (http)
+                sameSite: 'lax' as const, // lax works for same-origin
+                // NO DOMAIN for localhost (defaults to current domain)
+            }
+            : {
+                ...baseCookieOptions,
+                secure: true, // true for production (https)
+                sameSite: 'lax' as const,
+                domain: '.kenbike.store', // production domain
+            };
 
         res.cookie('access_token', result.data.access_token, {
             ...cookieOptions,
@@ -83,7 +94,6 @@ export class AuthController {
             maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
-        // ✅ ADDED: Debug log untuk verify cookie configuration
         console.log('✅ Cookies set for user:', result.data.user.email);
         console.log('🌐 Origin:', origin);
         console.log('🏠 Is Localhost:', isLocalhost);
@@ -108,14 +118,24 @@ export class AuthController {
         const origin = req.headers.origin || '';
         const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
 
-        // ✅ CHANGED: Use SameSite=None for localhost
+        const cookieOptions = isLocalhost
+            ? {
+                httpOnly: true,
+                secure: false,
+                sameSite: 'lax' as const,
+                path: '/',
+            }
+            : {
+                httpOnly: true,
+                secure: true,
+                sameSite: 'lax' as const,
+                domain: '.kenbike.store',
+                path: '/',
+            };
+
         res.cookie('access_token', result.data.access_token, {
-            httpOnly: true,
-            secure: !isLocalhost,
-            sameSite: (isLocalhost ? 'none' : 'lax') as 'none' | 'lax',
-            path: '/',
+            ...cookieOptions,
             maxAge: 15 * 60 * 1000,
-            ...(isLocalhost ? {} : { domain: '.kenbike.store' }),
         });
 
         console.log('✅ Access token refreshed for origin:', origin);
@@ -159,13 +179,20 @@ export class AuthController {
         const origin = req.headers.origin || '';
         const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
 
-        const clearOptions = {
-            httpOnly: true,
-            secure: !isLocalhost,
-            sameSite: (isLocalhost ? 'none' : 'lax') as 'none' | 'lax',
-            path: '/',
-            ...(isLocalhost ? {} : { domain: '.kenbike.store' }),
-        };
+        const clearOptions = isLocalhost
+            ? {
+                httpOnly: true,
+                secure: false,
+                sameSite: 'lax' as const,
+                path: '/',
+            }
+            : {
+                httpOnly: true,
+                secure: true,
+                sameSite: 'lax' as const,
+                domain: '.kenbike.store',
+                path: '/',
+            };
 
         res.clearCookie('access_token', clearOptions);
         res.clearCookie('refresh_token', clearOptions);
