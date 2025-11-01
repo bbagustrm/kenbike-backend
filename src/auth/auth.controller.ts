@@ -38,6 +38,47 @@ export class AuthController {
         private validationService: ValidationService,
     ) {}
 
+    /**
+     * ✅ HELPER: Menentukan opsi cookie berdasarkan lingkungan request
+     * - Cross-Origin Dev (localhost -> production): sameSite='none', secure=true
+     * - Localhost Dev (http -> http): sameSite='lax', secure=false
+     * - Production (https -> https): sameSite='lax', secure=true, domain='.kenbike.store'
+     */
+    private getCookieOptions(req: Request) {
+        const origin = req.headers.origin || '';
+        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+        const isSecureRequest = req.protocol === 'https';
+
+        // ✅ Kondisi 1: Cross-Origin Development (localhost -> production)
+        if (isLocalhost && isSecureRequest) {
+            return {
+                httpOnly: true,
+                secure: true, // WAJIB true untuk SameSite=None
+                sameSite: 'none' as const, // WAJIB 'none' untuk cross-origin
+                path: '/',
+            };
+        }
+        // ✅ Kondisi 2: Localhost Development (http://localhost -> http://localhost)
+        else if (isLocalhost && !isSecureRequest) {
+            return {
+                httpOnly: true,
+                secure: false,
+                sameSite: 'lax' as const,
+                path: '/',
+            };
+        }
+        // ✅ Kondisi 3: Production (https://kenbike.store -> https://api.kenbike.store)
+        else {
+            return {
+                httpOnly: true,
+                secure: true,
+                sameSite: 'lax' as const,
+                domain: '.kenbike.store', // Penting untuk berbagi cookie lintas subdomain
+                path: '/',
+            };
+        }
+    }
+
     @Public()
     @Post('register')
     @HttpCode(HttpStatus.CREATED)
@@ -46,43 +87,19 @@ export class AuthController {
         return this.authService.register(dto);
     }
 
-    /**
-     * ✅ FIXED: Proper cookie configuration for localhost vs production
-     */
     @Public()
-    @Throttle({ default: { limit: 5, ttl: 60000 } })
+    @Throttle({default: {limit: 5, ttl: 60000}})
     @Post('login')
     @HttpCode(HttpStatus.OK)
     async login(
         @Body() body: LoginDto,
         @Req() req: Request,
-        @Res({ passthrough: true }) res: Response,
+        @Res({passthrough: true}) res: Response,
     ) {
         const dto = this.validationService.validate(LoginSchema, body);
         const result = await this.authService.login(dto);
 
-        const origin = req.headers.origin || '';
-        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
-
-        // ✅ CRITICAL FIX: Different cookie config for localhost vs production
-        const baseCookieOptions = {
-            httpOnly: true,
-            path: '/',
-        };
-
-        const cookieOptions = isLocalhost
-            ? {
-                ...baseCookieOptions,
-                secure: false, // false for localhost (http)
-                sameSite: 'lax' as const, // lax works for same-origin
-                // NO DOMAIN for localhost (defaults to current domain)
-            }
-            : {
-                ...baseCookieOptions,
-                secure: true, // true for production (https)
-                sameSite: 'lax' as const,
-                domain: '.kenbike.store', // production domain
-            };
+        const cookieOptions = this.getCookieOptions(req);
 
         res.cookie('access_token', result.data.access_token, {
             ...cookieOptions,
@@ -95,8 +112,7 @@ export class AuthController {
         });
 
         console.log('✅ Cookies set for user:', result.data.user.email);
-        console.log('🌐 Origin:', origin);
-        console.log('🏠 Is Localhost:', isLocalhost);
+        console.log('🌐 Origin:', req.headers.origin);
         console.log('🍪 Cookie Options:', {
             ...cookieOptions,
             access_token_maxAge: '15 minutes',
@@ -115,30 +131,14 @@ export class AuthController {
     ) {
         const result = await this.authService.refreshToken(req);
 
-        const origin = req.headers.origin || '';
-        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
-
-        const cookieOptions = isLocalhost
-            ? {
-                httpOnly: true,
-                secure: false,
-                sameSite: 'lax' as const,
-                path: '/',
-            }
-            : {
-                httpOnly: true,
-                secure: true,
-                sameSite: 'lax' as const,
-                domain: '.kenbike.store',
-                path: '/',
-            };
+        const cookieOptions = this.getCookieOptions(req);
 
         res.cookie('access_token', result.data.access_token, {
             ...cookieOptions,
             maxAge: 15 * 60 * 1000,
         });
 
-        console.log('✅ Access token refreshed for origin:', origin);
+        console.log('✅ Access token refreshed for origin:', req.headers.origin);
 
         return result;
     }
@@ -176,23 +176,7 @@ export class AuthController {
 
         const result = await this.authService.logout(userId, token);
 
-        const origin = req.headers.origin || '';
-        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
-
-        const clearOptions = isLocalhost
-            ? {
-                httpOnly: true,
-                secure: false,
-                sameSite: 'lax' as const,
-                path: '/',
-            }
-            : {
-                httpOnly: true,
-                secure: true,
-                sameSite: 'lax' as const,
-                domain: '.kenbike.store',
-                path: '/',
-            };
+        const clearOptions = this.getCookieOptions(req);
 
         res.clearCookie('access_token', clearOptions);
         res.clearCookie('refresh_token', clearOptions);
