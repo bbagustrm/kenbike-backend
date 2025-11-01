@@ -38,9 +38,6 @@ export class AuthController {
         private validationService: ValidationService,
     ) {}
 
-    /**
-     * POST /auth/register
-     */
     @Public()
     @Post('register')
     @HttpCode(HttpStatus.CREATED)
@@ -50,7 +47,7 @@ export class AuthController {
     }
 
     /**
-     * POST /auth/login
+     * ✅ FIXED: Proper localhost cookie handling with SameSite=None
      */
     @Public()
     @Throttle({ default: { limit: 5, ttl: 60000 } })
@@ -67,10 +64,11 @@ export class AuthController {
         const origin = req.headers.origin || '';
         const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
 
+        // ✅ CHANGED: Use SameSite=None for localhost to allow cross-origin cookies
         const cookieOptions = {
             httpOnly: true,
-            secure: !isLocalhost,
-            sameSite: 'lax' as const,
+            secure: !isLocalhost, // false for localhost, true for production
+            sameSite: (isLocalhost ? 'none' : 'lax') as 'none' | 'lax',
             path: '/',
             ...(isLocalhost ? {} : { domain: '.kenbike.store' }),
         };
@@ -85,15 +83,19 @@ export class AuthController {
             maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
+        // ✅ ADDED: Debug log untuk verify cookie configuration
         console.log('✅ Cookies set for user:', result.data.user.email);
-        console.log('🌐 Origin:', origin, '| Localhost:', isLocalhost);
+        console.log('🌐 Origin:', origin);
+        console.log('🏠 Is Localhost:', isLocalhost);
+        console.log('🍪 Cookie Options:', {
+            ...cookieOptions,
+            access_token_maxAge: '15 minutes',
+            refresh_token_maxAge: '7 days',
+        });
 
         return result;
     }
 
-    /**
-     * POST /auth/refresh
-     */
     @Public()
     @Post('refresh')
     @HttpCode(HttpStatus.OK)
@@ -106,23 +108,21 @@ export class AuthController {
         const origin = req.headers.origin || '';
         const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
 
+        // ✅ CHANGED: Use SameSite=None for localhost
         res.cookie('access_token', result.data.access_token, {
             httpOnly: true,
             secure: !isLocalhost,
-            sameSite: 'lax',
+            sameSite: (isLocalhost ? 'none' : 'lax') as 'none' | 'lax',
             path: '/',
             maxAge: 15 * 60 * 1000,
             ...(isLocalhost ? {} : { domain: '.kenbike.store' }),
         });
 
-        console.log('✅ Access token refreshed');
+        console.log('✅ Access token refreshed for origin:', origin);
 
         return result;
     }
 
-    /**
-     * POST /auth/forgot-password
-     */
     @Public()
     @Throttle({ default: { limit: 3, ttl: 300000 } })
     @Post('forgot-password')
@@ -132,9 +132,6 @@ export class AuthController {
         return this.authService.forgotPassword(dto);
     }
 
-    /**
-     * POST /auth/reset-password
-     */
     @Public()
     @Post('reset-password')
     @HttpCode(HttpStatus.OK)
@@ -143,9 +140,6 @@ export class AuthController {
         return this.authService.resetPassword(dto);
     }
 
-    /**
-     * POST /auth/logout
-     */
     @UseGuards(JwtAuthGuard)
     @Post('logout')
     @HttpCode(HttpStatus.OK)
@@ -168,7 +162,7 @@ export class AuthController {
         const clearOptions = {
             httpOnly: true,
             secure: !isLocalhost,
-            sameSite: 'lax' as const,
+            sameSite: (isLocalhost ? 'none' : 'lax') as 'none' | 'lax',
             path: '/',
             ...(isLocalhost ? {} : { domain: '.kenbike.store' }),
         };
@@ -181,18 +175,12 @@ export class AuthController {
         return result;
     }
 
-    /**
-     * GET /auth/me
-     */
     @UseGuards(JwtAuthGuard)
     @Get('me')
     async getCurrentUser(@CurrentUser('id') userId: string) {
         return this.authService.getCurrentUser(userId);
     }
 
-    /**
-     * PATCH /auth/profile
-     */
     @UseGuards(JwtAuthGuard)
     @Patch('profile')
     @UseInterceptors(
@@ -216,9 +204,6 @@ export class AuthController {
         return this.authService.updateProfile(userId, dto, file);
     }
 
-    /**
-     * PATCH /auth/password
-     */
     @UseGuards(JwtAuthGuard)
     @Patch('password')
     async updatePassword(
@@ -229,9 +214,6 @@ export class AuthController {
         return this.authService.updatePassword(userId, dto);
     }
 
-    /**
-     * DELETE /auth/profile-image
-     */
     @UseGuards(JwtAuthGuard)
     @Delete('profile-image')
     async deleteProfileImage(@CurrentUser('id') userId: string) {
