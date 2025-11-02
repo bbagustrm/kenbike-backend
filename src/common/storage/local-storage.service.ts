@@ -217,7 +217,6 @@ export class LocalStorageService {
         try {
             if (!imageUrl) return;
 
-            // ✅ PERBAIKAN: Handle both full URL and relative path
             let relativePath: string;
 
             // Check if it's a full URL
