@@ -189,7 +189,7 @@ export class LocalStorageService {
             }
 
             // Generate public URL
-            const url = `${this.baseUrl}/uploads/${folder}/${filename}`;
+            const url = `/uploads/${folder}/${filename}`;
 
             this.logger.info('✅ Upload complete:', {
                 url,

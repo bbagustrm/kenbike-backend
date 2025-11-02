@@ -2,31 +2,47 @@ version: "3.8"
 
 services:
   app:
-    image: bbagustrm/kenbike-backend:latest
-    container_name: kenbike-backend
+    build:
+      context: .
+      dockerfile: Dockerfile # Gunakan Dockerfile yang sama
+    container_name: kenbike-backend-dev
     ports:
+      # Petakan port 3000 di container ke port 3000 di host
       - "3000:3000"
-    env_file: .env
+    env_file:
+      - .env.local # Gunakan file env khusus development
+    volumes:
+      # ✅ KRUSIAL: Mount source code untuk hot-reload
+      - ./src:/app/src
+      # ✅ KRUSIAL: Mount node_modules untuk menghindari konflik
+      - /app/node_modules
+      # ✅ PENTING: Mount folder uploads agar file tersimpan di host
+      - ./uploads:/app/uploads
+    # ✅ PERINTAH: Jalankan development server, bukan production build
+    command: npm run start:dev
     depends_on:
       - db
-    restart: always
-    volumes:
-      - ./uploads:/app/uploads
-      - ./logs:/app/logs
-    environment:
-      UPLOAD_DIR: /app/uploads
-      BASE_URL: http://kenbike.store
-    command: sh -c "npx prisma migrate deploy && node dist/main.js"
+    restart: unless-stopped
+    networks:
+      - kenbike_dev_network
 
   db:
     image: postgres:15
-    container_name: kenbike-db
-    restart: always
-    env_file: .env
+    container_name: kenbike-db-dev
+    env_file:
+      - .env.local
     ports:
-      - "5432:5432"
+      # Opsional: akses DB dari host dengan tools seperti DBeaver
+      - "5433:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - backend_dev_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - kenbike_dev_network
 
 volumes:
-  pgdata:
+  backend_dev_pgdata:
+
+networks:
+  kenbike_dev_network:
+    driver: bridge
