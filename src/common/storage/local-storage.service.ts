@@ -188,7 +188,7 @@ export class LocalStorageService {
                 });
             }
 
-            const url = `/uploads/${folder}/${filename}`;
+            const url = `${this.baseUrl}/uploads/${folder}/${filename}`;
 
             this.logger.info('✅ Upload complete:', {
                 url,
