@@ -188,8 +188,7 @@ export class LocalStorageService {
                 });
             }
 
-            // Generate public URL
-            const url = `/uploads/${folder}/${filename}`;
+            const url = `${this.baseUrl}/uploads/${folder}/${filename}`;
 
             this.logger.info('✅ Upload complete:', {
                 url,
@@ -218,13 +217,28 @@ export class LocalStorageService {
         try {
             if (!imageUrl) return;
 
-            const urlParts = imageUrl.split('/uploads/');
-            if (urlParts.length < 2) {
-                this.logger.warn(`Invalid image URL format: ${imageUrl}`);
-                return;
+            // ✅ PERBAIKAN: Handle both full URL and relative path
+            let relativePath: string;
+
+            // Check if it's a full URL
+            if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+                try {
+                    const url = new URL(imageUrl);
+                    relativePath = url.pathname.replace(/^\/uploads\//, '');
+                } catch (urlError) {
+                    this.logger.warn(`Invalid URL format: ${imageUrl}`);
+                    return;
+                }
+            } else {
+                // It's a relative path
+                const urlParts = imageUrl.split('/uploads/');
+                if (urlParts.length < 2) {
+                    this.logger.warn(`Invalid image URL format: ${imageUrl}`);
+                    return;
+                }
+                relativePath = urlParts[1];
             }
 
-            const relativePath = urlParts[1];
             const absoluteUploadDir = path.resolve(this.uploadDir);
             const filePath = path.join(absoluteUploadDir, relativePath);
 
