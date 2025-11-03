@@ -219,7 +219,6 @@ export class LocalStorageService {
 
             let relativePath: string;
 
-            // Check if it's a full URL
             if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
                 try {
                     const url = new URL(imageUrl);
