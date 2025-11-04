@@ -11,9 +11,11 @@ import {TagModule} from "./tag/tag.module";
 import {PromotionModule} from "./promotion/promotion.module";
 import { StorageModule } from './common/storage/storage.module';
 import { UploadModule } from './upload/upload.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     CommonModule,
     AuthModule,
     UserModule,

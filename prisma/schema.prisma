@@ -113,7 +113,6 @@ model Product {
   enDescription String? @map("en_description") @db.Text
   idPrice       Int     @map("id_price")
   enPrice       Int     @map("en_price")
-  imageUrl      String? @map("image_url") // highlight / thumbnail image
 
   // 📊 Hybrid analytics fields
   totalSold Int    @default(0) @map("total_sold")
@@ -139,6 +138,7 @@ model Product {
   tags     ProductTag[]
   reviews  Review[]
   variants ProductVariant[]
+  images   ProductImage[]
 
   // ⚙️ Status & Features
   isActive     Boolean   @default(true) @map("is_active")
@@ -157,6 +157,19 @@ model Product {
   @@index([isFeatured])
   @@index([deletedAt])
   @@map("products")
+}
+
+model ProductImage {
+  id        String @id @default(uuid())
+  productId String @map("product_id")
+  imageUrl  String @map("image_url") @db.VarChar(500)
+  order     Int    @default(0) // untuk urutan gambar (0 = primary)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([order])
+  @@map("product_images")
 }
 
 // Model ProductVariant

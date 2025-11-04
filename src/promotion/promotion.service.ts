@@ -31,7 +31,6 @@ export class PromotionService {
             limit,
             search,
             isActive,
-            includeExpired,
             includeDeleted,
             sortBy,
             order,
@@ -246,7 +245,10 @@ export class PromotionService {
                         slug: true,
                         idPrice: true,
                         enPrice: true,
-                        imageUrl: true,
+                        images: {
+                            orderBy: { order: 'asc' },
+                            take: 1, // Only get primary image
+                        },
                         totalSold: true,
                         isActive: true,
                     },
@@ -273,6 +275,8 @@ export class PromotionService {
                 deletedAt: promotion.deletedAt,
                 products: promotion.products.map((product) => ({
                     ...product,
+                    imageUrl: product.images[0]?.imageUrl || null, // Get primary image
+                    images: product.images, // Keep images array
                     discountedIdPrice: Math.round(product.idPrice * (1 - promotion.discount)),
                     discountedEnPrice: Math.round(product.enPrice * (1 - promotion.discount)),
                     savings: Math.round(product.idPrice * promotion.discount),
@@ -687,15 +691,39 @@ export class PromotionService {
             data: { isActive: false },
         });
 
-        if (toActivate.count > 0 || toDeactivate.count > 0) {
+        const expiredPromotions = await this.prisma.promotion.findMany({
+            where: {
+                deletedAt: null,
+                endDate: { lt: now },
+            },
+            select: { id: true },
+        });
+
+        const expiredPromotionIds = expiredPromotions.map(p => p.id);
+
+        let productsUpdated = 0;
+        if (expiredPromotionIds.length > 0) {
+            const updateResult = await this.prisma.product.updateMany({
+                where: {
+                    promotionId: { in: expiredPromotionIds },
+                },
+                data: {
+                    promotionId: null,
+                },
+            });
+            productsUpdated = updateResult.count;
+        }
+
+        if (toActivate.count > 0 || toDeactivate.count > 0 || productsUpdated > 0) {
             this.logger.info(
-                `🔄 Auto-updated promotions: ${toActivate.count} activated, ${toDeactivate.count} deactivated`,
+                `🔄 Auto-updated promotions: ${toActivate.count} activated, ${toDeactivate.count} deactivated, ${productsUpdated} products cleared`,
             );
         }
 
         return {
             activated: toActivate.count,
             deactivated: toDeactivate.count,
+            productsCleared: productsUpdated,
         };
     }
 
