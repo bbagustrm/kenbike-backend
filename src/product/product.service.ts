@@ -12,7 +12,7 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Prisma } from '@prisma/client';
-import {UpdateProductDto} from "./dto/update-product.dto";
+import { UpdateProductDto } from "./dto/update-product.dto";
 import { LocalStorageService } from '../common/storage/local-storage.service';
 
 @Injectable()
@@ -231,6 +231,7 @@ export class ProductService {
                 images: {
                     orderBy: { order: 'asc' },
                 },
+                gallery: true,
                 reviews: {
                     include: {
                         user: {
@@ -301,6 +302,7 @@ export class ProductService {
                         order: 'asc',
                     },
                 },
+                gallery: true,
                 reviews: {
                     include: {
                         user: {
@@ -417,7 +419,6 @@ export class ProductService {
                     enDescription: dto.enDescription,
                     idPrice: dto.idPrice,
                     enPrice: dto.enPrice,
-                    // imageUrl DIHAPUS
                     weight: dto.weight,
                     height: dto.height,
                     length: dto.length,
@@ -472,6 +473,16 @@ export class ProductService {
                     data: dto.tagIds.map((tagId) => ({
                         productId: newProduct.id,
                         tagId,
+                    })),
+                });
+            }
+
+            if (dto.galleryImages && dto.galleryImages.length > 0) {
+                await tx.galleryImage.createMany({
+                    data: dto.galleryImages.map((gallery) => ({
+                        productId: newProduct.id,
+                        imageUrl: gallery.imageUrl,
+                        caption: gallery.caption,
                     })),
                 });
             }
@@ -736,6 +747,7 @@ export class ProductService {
                 variants: true,
                 tags: true,
                 images: true,
+                gallery: true,
             },
         });
 
@@ -978,6 +990,81 @@ export class ProductService {
                 }
             }
 
+            if (dto.galleryImages !== undefined) {
+                // Get existing gallery IDs
+                const existingGalleryIds = existingProduct.gallery.map(g => g.id);
+
+                // Get IDs that should be kept (from dto)
+                const keepGalleryIds = dto.galleryImages
+                    .filter(g => g.id && g._action !== 'delete')
+                    .map(g => g.id!);
+
+                // Delete gallery images that are not in the new list
+                const galleryIdsToDelete = existingGalleryIds.filter(
+                    gId => !keepGalleryIds.includes(gId)
+                );
+
+                if (galleryIdsToDelete.length > 0) {
+                    // Delete from storage
+                    const galleriesToDelete = existingProduct.gallery.filter(
+                        g => galleryIdsToDelete.includes(g.id)
+                    );
+
+                    for (const gallery of galleriesToDelete) {
+                        await this.localStorageService
+                            .deleteImage(gallery.imageUrl)
+                            .catch(() => {
+                                this.logger.warn('Failed to delete gallery image from storage');
+                            });
+                    }
+
+                    // Delete from database
+                    await tx.galleryImage.deleteMany({
+                        where: { id: { in: galleryIdsToDelete } },
+                    });
+                }
+
+                // Process each gallery image
+                for (const gallery of dto.galleryImages) {
+                    if (gallery._action === 'delete' && gallery.id) {
+                        // Delete specific image
+                        const galleryToDelete = existingProduct.gallery.find(
+                            g => g.id === gallery.id
+                        );
+
+                        if (galleryToDelete) {
+                            await this.localStorageService
+                                .deleteImage(galleryToDelete.imageUrl)
+                                .catch(() => {
+                                    this.logger.warn('Failed to delete gallery image');
+                                });
+                        }
+
+                        await tx.galleryImage.delete({
+                            where: { id: gallery.id },
+                        });
+                    } else if (gallery._action === 'update' && gallery.id) {
+                        // Update existing gallery image
+                        await tx.galleryImage.update({
+                            where: { id: gallery.id },
+                            data: {
+                                imageUrl: gallery.imageUrl,
+                                caption: gallery.caption,
+                            },
+                        });
+                    } else if (gallery._action === 'create' || !gallery.id) {
+                        // Create new gallery image
+                        await tx.galleryImage.create({
+                            data: {
+                                productId: id,
+                                imageUrl: gallery.imageUrl,
+                                caption: gallery.caption,
+                            },
+                        });
+                    }
+                }
+            }
+
             return updatedProduct;
         });
 
@@ -1067,6 +1154,7 @@ export class ProductService {
                     },
                 },
                 images: true,
+                gallery: true,
             },
         });
 
@@ -1093,6 +1181,14 @@ export class ProductService {
                     }),
                 );
             }
+        }
+
+        for (const gallery of product.gallery) {
+            imageDeletionPromises.push(
+                this.localStorageService.deleteImage(gallery.imageUrl).catch(() => {
+                    this.logger.warn('Failed to delete gallery image');
+                }),
+            );
         }
 
         await Promise.all(imageDeletionPromises);
