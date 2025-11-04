@@ -69,7 +69,6 @@ CREATE TABLE "products" (
     "en_description" TEXT,
     "id_price" INTEGER NOT NULL,
     "en_price" INTEGER NOT NULL,
-    "image_url" TEXT,
     "total_sold" INTEGER NOT NULL DEFAULT 0,
     "total_view" INTEGER NOT NULL DEFAULT 0,
     "avg_rating" DOUBLE PRECISION DEFAULT 0.0,
@@ -89,6 +88,16 @@ CREATE TABLE "products" (
     "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "products_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "product_images" (
+    "id" TEXT NOT NULL,
+    "product_id" TEXT NOT NULL,
+    "image_url" VARCHAR(500) NOT NULL,
+    "order" INTEGER NOT NULL DEFAULT 0,
+
+    CONSTRAINT "product_images_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -262,6 +271,12 @@ CREATE INDEX "products_is_featured_idx" ON "products"("is_featured");
 CREATE INDEX "products_deleted_at_idx" ON "products"("deleted_at");
 
 -- CreateIndex
+CREATE INDEX "product_images_product_id_idx" ON "product_images"("product_id");
+
+-- CreateIndex
+CREATE INDEX "product_images_order_idx" ON "product_images"("order");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "product_variants_sku_key" ON "product_variants"("sku");
 
 -- CreateIndex
@@ -344,6 +359,9 @@ ALTER TABLE "products" ADD CONSTRAINT "products_category_id_fkey" FOREIGN KEY ("
 
 -- AddForeignKey
 ALTER TABLE "products" ADD CONSTRAINT "products_promotion_id_fkey" FOREIGN KEY ("promotion_id") REFERENCES "promotions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "product_images" ADD CONSTRAINT "product_images_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "product_variants" ADD CONSTRAINT "product_variants_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
