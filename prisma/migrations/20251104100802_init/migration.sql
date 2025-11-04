@@ -101,6 +101,18 @@ CREATE TABLE "product_images" (
 );
 
 -- CreateTable
+CREATE TABLE "gallery_images" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "imageUrl" TEXT NOT NULL,
+    "caption" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "gallery_images_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "product_variants" (
     "id" TEXT NOT NULL,
     "product_id" TEXT NOT NULL,
@@ -277,6 +289,9 @@ CREATE INDEX "product_images_product_id_idx" ON "product_images"("product_id");
 CREATE INDEX "product_images_order_idx" ON "product_images"("order");
 
 -- CreateIndex
+CREATE INDEX "gallery_images_productId_idx" ON "gallery_images"("productId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "product_variants_sku_key" ON "product_variants"("sku");
 
 -- CreateIndex
@@ -362,6 +377,9 @@ ALTER TABLE "products" ADD CONSTRAINT "products_promotion_id_fkey" FOREIGN KEY (
 
 -- AddForeignKey
 ALTER TABLE "product_images" ADD CONSTRAINT "product_images_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "gallery_images" ADD CONSTRAINT "gallery_images_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "product_variants" ADD CONSTRAINT "product_variants_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
