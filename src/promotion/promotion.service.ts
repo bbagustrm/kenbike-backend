@@ -49,9 +49,9 @@ export class PromotionService {
 
         // Active filter
         if (!isAdmin) {
-            where.isActive = true; // Public only
+            where.isActive = true;
         } else if (isActive !== undefined) {
-            where.isActive = isActive; // Admin optional filter
+            where.isActive = isActive;
         }
 
         // For public, always filter out expired
