@@ -6,6 +6,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
+// ✅ Add type for storage folders
+export type StorageFolder = 'profiles' | 'products' | 'variants' | 'gallery' | 'reviews';
+
 @Injectable()
 export class LocalStorageService {
     private readonly uploadDir: string;
@@ -28,7 +31,8 @@ export class LocalStorageService {
     }
 
     private ensureUploadDir() {
-        const folders = ['profiles', 'products', 'variants', 'reviews'];
+        // ✅ Add 'gallery' to folders array
+        const folders: StorageFolder[] = ['profiles', 'products', 'variants', 'gallery', 'reviews'];
 
         // Get absolute path
         const absoluteUploadDir = path.resolve(this.uploadDir);
@@ -78,7 +82,7 @@ export class LocalStorageService {
 
     async uploadImage(
         file: Express.Multer.File,
-        folder: 'profiles' | 'products' | 'variants' | 'reviews',
+        folder: StorageFolder, // ✅ Use StorageFolder type
     ): Promise<{ url: string; path: string }> {
         try {
             this.logger.info('📤 Starting file upload:', {
@@ -105,10 +109,11 @@ export class LocalStorageService {
                 );
             }
 
-            // Validate file size (2MB)
-            const maxSize = 2 * 1024 * 1024;
+            // ✅ Dynamic file size validation based on folder
+            const maxSize = folder === 'gallery' ? 5 * 1024 * 1024 : 2 * 1024 * 1024; // 5MB for gallery, 2MB for others
             if (file.size > maxSize) {
-                throw new BadRequestException('File size must not exceed 2MB');
+                const maxSizeMB = folder === 'gallery' ? 5 : 2;
+                throw new BadRequestException(`File size must not exceed ${maxSizeMB}MB`);
             }
 
             // Generate filename

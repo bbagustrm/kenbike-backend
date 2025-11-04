@@ -18,6 +18,9 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 
+// ✅ Add type for allowed folders
+type UploadFolder = 'profiles' | 'products' | 'variants' | 'gallery' | 'reviews';
+
 @Controller('upload')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UploadController {
@@ -32,13 +35,13 @@ export class UploadController {
     @HttpCode(HttpStatus.OK)
     @UseInterceptors(
         FileInterceptor('file', {
-            limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+            limits: { fileSize: 5 * 1024 * 1024 }, // ✅ 5MB for gallery images
             fileFilter: FileUploadUtil.imageFileFilter,
         }),
     )
     async uploadImage(
         @UploadedFile() file: Express.Multer.File,
-        @Body('folder') folder: 'profiles' | 'products' | 'variants' | 'reviews',
+        @Body('folder') folder: UploadFolder, // ✅ Use type
     ) {
         if (!file) {
             throw new BadRequestException('File is required');
@@ -65,20 +68,20 @@ export class UploadController {
 
     /**
      * POST /upload/images
-     * Upload multiple images (max 10)
+     * Upload multiple images (max 20 for gallery)
      */
     @Post('images')
     @Roles(Role.ADMIN, Role.OWNER)
     @HttpCode(HttpStatus.OK)
     @UseInterceptors(
-        FilesInterceptor('files', 10, {
-            limits: { fileSize: 2 * 1024 * 1024 }, // 2MB per file
+        FilesInterceptor('files', 20, { // ✅ Increase to 20 for gallery
+            limits: { fileSize: 5 * 1024 * 1024 }, // ✅ 5MB per file
             fileFilter: FileUploadUtil.imageFileFilter,
         }),
     )
     async uploadImages(
         @UploadedFiles() files: Express.Multer.File[],
-        @Body('folder') folder: 'profiles' | 'products' | 'variants' | 'reviews',
+        @Body('folder') folder: UploadFolder, // ✅ Use type
     ) {
         if (!files || files.length === 0) {
             throw new BadRequestException('At least one file is required');
@@ -88,8 +91,9 @@ export class UploadController {
             throw new BadRequestException('Folder parameter is required');
         }
 
-        // Validate files
-        FileUploadUtil.validateMultipleFiles(files, 10);
+        // Validate files based on folder
+        const maxFiles = folder === 'gallery' ? 20 : 10;
+        FileUploadUtil.validateMultipleFiles(files, maxFiles);
 
         // Upload all files
         const uploadPromises = files.map((file) =>
@@ -194,6 +198,42 @@ export class UploadController {
 
         return {
             message: `${results.length} variant images uploaded successfully`,
+            data: {
+                urls: results.map((r) => r.url),
+                count: results.length,
+            },
+        };
+    }
+
+    // ✅ NEW: Shorthand for gallery uploads
+    /**
+     * POST /upload/gallery
+     * Upload gallery images (shorthand for gallery folder)
+     */
+    @Post('gallery')
+    @Roles(Role.ADMIN, Role.OWNER)
+    @HttpCode(HttpStatus.OK)
+    @UseInterceptors(
+        FilesInterceptor('files', 20, {
+            limits: { fileSize: 5 * 1024 * 1024 }, // 5MB per file
+            fileFilter: FileUploadUtil.imageFileFilter,
+        }),
+    )
+    async uploadGalleryImages(@UploadedFiles() files: Express.Multer.File[]) {
+        if (!files || files.length === 0) {
+            throw new BadRequestException('At least one file is required');
+        }
+
+        FileUploadUtil.validateMultipleFiles(files, 20);
+
+        const uploadPromises = files.map((file) =>
+            this.localStorageService.uploadImage(file, 'gallery'),
+        );
+
+        const results = await Promise.all(uploadPromises);
+
+        return {
+            message: `${results.length} gallery images uploaded successfully`,
             data: {
                 urls: results.map((r) => r.url),
                 count: results.length,
