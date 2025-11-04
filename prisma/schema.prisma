@@ -139,6 +139,7 @@ model Product {
   reviews  Review[]
   variants ProductVariant[]
   images   ProductImage[]
+  gallery  GalleryImage[]
 
   // ⚙️ Status & Features
   isActive     Boolean   @default(true) @map("is_active")
@@ -170,6 +171,20 @@ model ProductImage {
   @@index([productId])
   @@index([order])
   @@map("product_images")
+}
+
+model GalleryImage {
+  id        String   @id @default(uuid())
+  productId String
+  imageUrl  String
+  caption   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("gallery_images")
 }
 
 // Model ProductVariant
