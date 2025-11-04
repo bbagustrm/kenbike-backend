@@ -166,6 +166,10 @@ export class ProductService {
                     },
                     take: 5,
                 },
+                images: {
+                    orderBy: { order: 'asc' },
+                    take: 5,
+                },
             },
             skip: PaginationUtil.getSkip(validPage, validLimit),
             take: validLimit,
@@ -183,7 +187,10 @@ export class ProductService {
             enDescription: product.enDescription,
             idPrice: product.idPrice,
             enPrice: product.enPrice,
-            imageUrl: product.imageUrl,
+
+            imageUrl: product.images[0]?.imageUrl || null,
+            images: product.images, // include all images
+
             totalSold: product.totalSold,
             totalView: product.totalView,
             avgRating: product.avgRating,
@@ -215,15 +222,14 @@ export class ProductService {
                 category: true,
                 promotion: true,
                 tags: {
-                    include: {
-                        tag: true,
-                    },
+                    include: { tag: true },
                 },
                 variants: {
                     where: { deletedAt: null, isActive: true },
-                    include: {
-                        images: true,
-                    },
+                    include: { images: true },
+                },
+                images: {
+                    orderBy: { order: 'asc' },
                 },
                 reviews: {
                     include: {
@@ -238,10 +244,8 @@ export class ProductService {
                         },
                         images: true,
                     },
-                    orderBy: {
-                        createdAt: 'desc',
-                    },
-                    take: 10, // Latest 10 reviews
+                    orderBy: { createdAt: 'desc' },
+                    take: 10,
                 },
             },
         });
@@ -250,7 +254,7 @@ export class ProductService {
             throw new NotFoundException('Product not found');
         }
 
-        // Increment view count (async, don't wait)
+        // Increment view count
         this.incrementViewCount(product.id).catch((error) => {
             this.logger.error('Failed to increment view count', error);
         });
@@ -290,6 +294,11 @@ export class ProductService {
                 variants: {
                     include: {
                         images: true,
+                    },
+                },
+                images: {
+                    orderBy: {
+                        order: 'asc',
                     },
                 },
                 reviews: {
@@ -386,16 +395,18 @@ export class ProductService {
         }
 
         // Upload main image if provided
-        let imageUrl = dto.imageUrl;
+        let imageUrls = dto.imageUrls;
         if (mainImageFile) {
             const uploadResult = await this.localStorageService.uploadImage(
                 mainImageFile,
                 'products',
             );
-            imageUrl = uploadResult.url;
+            if (!imageUrls.includes(uploadResult.url)) {
+                imageUrls = [uploadResult.url, ...imageUrls];
+            }
         }
 
-        // Create product with variants and tags in transaction
+        // Create product with images in transaction
         const product = await this.prisma.$transaction(async (tx) => {
             // Create product
             const newProduct = await tx.product.create({
@@ -406,7 +417,7 @@ export class ProductService {
                     enDescription: dto.enDescription,
                     idPrice: dto.idPrice,
                     enPrice: dto.enPrice,
-                    imageUrl,
+                    // imageUrl DIHAPUS
                     weight: dto.weight,
                     height: dto.height,
                     length: dto.length,
@@ -420,7 +431,18 @@ export class ProductService {
                 },
             });
 
-            // Create variants if provided
+            // ✅ TAMBAHKAN: Create product images
+            if (imageUrls && imageUrls.length > 0) {
+                await tx.productImage.createMany({
+                    data: imageUrls.map((url, index) => ({
+                        productId: newProduct.id,
+                        imageUrl: url,
+                        order: index, // 0 = primary image
+                    })),
+                });
+            }
+
+            // Create variants (existing code)
             if (dto.variants && dto.variants.length > 0) {
                 for (const variant of dto.variants) {
                     const newVariant = await tx.productVariant.create({
@@ -433,7 +455,6 @@ export class ProductService {
                         },
                     });
 
-                    // Create variant images if provided
                     if (variant.imageUrls && variant.imageUrls.length > 0) {
                         await tx.productVariantImage.createMany({
                             data: variant.imageUrls.map((url) => ({
@@ -445,7 +466,7 @@ export class ProductService {
                 }
             }
 
-            // Create tags if provided
+            // Create tags (existing code)
             if (dto.tagIds && dto.tagIds.length > 0) {
                 await tx.productTag.createMany({
                     data: dto.tagIds.map((tagId) => ({
@@ -489,13 +510,11 @@ export class ProductService {
                 deletedAt: null,
             },
             select: {
-                // Pilih kolom dari tabel produk
                 id: true,
                 name: true,
                 slug: true,
                 idPrice: true,
                 enPrice: true,
-                imageUrl: true,
                 avgRating: true,
                 totalSold: true,
                 category: {
@@ -528,6 +547,10 @@ export class ProductService {
                         },
                     },
                 },
+                images: {
+                    orderBy: { order: 'asc' },
+                    take: 5,
+                },
             },
             take: limit,
             orderBy: {
@@ -537,6 +560,7 @@ export class ProductService {
 
         const data = products.map((product) => ({
             ...product,
+            imageUrl: product.images[0]?.imageUrl || null,
             tags: product.tags.map((pt) => pt.tag),
         }));
 
@@ -564,10 +588,8 @@ export class ProductService {
                 slug: true,
                 idPrice: true,
                 enPrice: true,
-                imageUrl: true,
                 totalSold: true,
                 avgRating: true,
-                // Sertakan data relasi
                 category: {
                     select: {
                         id: true,
@@ -598,6 +620,10 @@ export class ProductService {
                         },
                     },
                 },
+                images: {
+                    orderBy: { order: 'asc' },
+                    take: 5,
+                },
             },
             take: limit,
             orderBy: {
@@ -605,9 +631,9 @@ export class ProductService {
             },
         });
 
-        // Transformasi array tags
         const data = products.map((product) => ({
             ...product,
+            imageUrl: product.images[0]?.imageUrl || null,
             tags: product.tags.map((pt) => pt.tag),
         }));
 
@@ -618,7 +644,6 @@ export class ProductService {
      * GET TRENDING PRODUCTS
      */
     async getTrendingProducts(limit: number = 10, days: number = 7) {
-        // Calculate date range
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - days);
 
@@ -636,10 +661,8 @@ export class ProductService {
                 slug: true,
                 idPrice: true,
                 enPrice: true,
-                imageUrl: true,
                 totalView: true,
                 avgRating: true,
-                // Sertakan data relasi
                 category: {
                     select: {
                         id: true,
@@ -670,30 +693,31 @@ export class ProductService {
                         },
                     },
                 },
+                images: {
+                    orderBy: { order: 'asc' },
+                    take: 5,
+                },
             },
-            take: limit * 2, // Ambil lebih banyak untuk diurutkan nanti
+            take: limit * 2,
             orderBy: [
                 { totalView: 'desc' },
                 { avgRating: 'desc' },
             ],
         });
 
-        // 1. Transformasi array tags agar lebih rapi
         const productsWithFlatTags = products.map((product) => ({
             ...product,
+            imageUrl: product.images[0]?.imageUrl || null,
             tags: product.tags.map((pt) => pt.tag),
         }));
 
-        // 2. Hitung trending score
         const dataWithScore = productsWithFlatTags.map((product) => ({
             ...product,
             trendingScore: (product.totalView / 100) + (product.avgRating || 0) * 2,
         }));
 
-        // 3. Urutkan berdasarkan trending score
         dataWithScore.sort((a, b) => b.trendingScore - a.trendingScore);
 
-        // 4. Ambil sesuai limit akhir
         const finalData = dataWithScore.slice(0, limit);
 
         return { data: finalData };
@@ -711,6 +735,7 @@ export class ProductService {
             include: {
                 variants: true,
                 tags: true,
+                images: true,
             },
         });
 
@@ -808,25 +833,22 @@ export class ProductService {
             }
         }
 
-        let imageUrl = dto.imageUrl;
-        if (mainImageFile) {
-            // Delete old image if exists
-            if (existingProduct.imageUrl) {
-                await this.localStorageService
-                    .deleteImage(existingProduct.imageUrl)
-                    .catch(() => {
-                        this.logger.warn('Failed to delete old product image');
-                    });
-            }
 
+        let imageUrls = dto.imageUrls;
+        if (mainImageFile) {
             const uploadResult = await this.localStorageService.uploadImage(
                 mainImageFile,
                 'products',
             );
-            imageUrl = uploadResult.url;
+            // Prepend new image ke array
+            if (imageUrls) {
+                imageUrls = [uploadResult.url, ...imageUrls];
+            } else {
+                imageUrls = [uploadResult.url];
+            }
         }
 
-        // Update product with variants and tags in transaction
+        // Update product in transaction
         const product = await this.prisma.$transaction(async (tx) => {
             // Update product
             const updatedProduct = await tx.product.update({
@@ -834,15 +856,11 @@ export class ProductService {
                 data: {
                     ...(dto.name && { name: dto.name }),
                     ...(dto.slug && { slug: dto.slug }),
-                    ...(dto.idDescription !== undefined && {
-                        idDescription: dto.idDescription,
-                    }),
-                    ...(dto.enDescription !== undefined && {
-                        enDescription: dto.enDescription,
-                    }),
+                    ...(dto.idDescription !== undefined && { idDescription: dto.idDescription }),
+                    ...(dto.enDescription !== undefined && { enDescription: dto.enDescription }),
                     ...(dto.idPrice !== undefined && { idPrice: dto.idPrice }),
                     ...(dto.enPrice !== undefined && { enPrice: dto.enPrice }),
-                    ...(imageUrl && { imageUrl }),
+                    // imageUrl DIHAPUS
                     ...(dto.weight !== undefined && { weight: dto.weight }),
                     ...(dto.height !== undefined && { height: dto.height }),
                     ...(dto.length !== undefined && { length: dto.length }),
@@ -853,47 +871,63 @@ export class ProductService {
                     ...(dto.isFeatured !== undefined && { isFeatured: dto.isFeatured }),
                     ...(dto.isActive !== undefined && { isActive: dto.isActive }),
                     ...(dto.isPreOrder !== undefined && { isPreOrder: dto.isPreOrder }),
-                    ...(dto.preOrderDays !== undefined && {
-                        preOrderDays: dto.preOrderDays,
-                    }),
+                    ...(dto.preOrderDays !== undefined && { preOrderDays: dto.preOrderDays }),
                 },
             });
 
-            // Handle variants update
+            // ✅ TAMBAHKAN: Handle product images update
+            if (imageUrls !== undefined) {
+                // Delete old images from storage
+                const oldImages = existingProduct.images;
+                for (const oldImage of oldImages) {
+                    await this.localStorageService
+                        .deleteImage(oldImage.imageUrl)
+                        .catch(() => {
+                            this.logger.warn('Failed to delete old product image');
+                        });
+                }
+
+                // Delete old images from database
+                await tx.productImage.deleteMany({
+                    where: { productId: id },
+                });
+
+                // Create new images
+                if (imageUrls.length > 0) {
+                    await tx.productImage.createMany({
+                        data: imageUrls.map((url, index) => ({
+                            productId: id,
+                            imageUrl: url,
+                            order: index,
+                        })),
+                    });
+                }
+            }
+
+            // Handle variants (existing code with modifications)
             if (dto.variants && dto.variants.length > 0) {
                 for (const variant of dto.variants) {
                     if (variant.id) {
-                        // Update or delete existing variant
                         if (variant._action === 'delete') {
-                            // Soft delete variant
                             await tx.productVariant.update({
                                 where: { id: variant.id },
                                 data: { deletedAt: new Date() },
                             });
                         } else {
-                            // Update variant
                             await tx.productVariant.update({
                                 where: { id: variant.id },
                                 data: {
-                                    ...(variant.variantName && {
-                                        variantName: variant.variantName,
-                                    }),
+                                    ...(variant.variantName && { variantName: variant.variantName }),
                                     ...(variant.sku && { sku: variant.sku }),
                                     ...(variant.stock !== undefined && { stock: variant.stock }),
-                                    ...(variant.isActive !== undefined && {
-                                        isActive: variant.isActive,
-                                    }),
+                                    ...(variant.isActive !== undefined && { isActive: variant.isActive }),
                                 },
                             });
 
-                            // Update variant images if provided
                             if (variant.imageUrls && variant.imageUrls.length > 0) {
-                                // Delete old images
                                 await tx.productVariantImage.deleteMany({
                                     where: { variantId: variant.id },
                                 });
-
-                                // Add new images
                                 await tx.productVariantImage.createMany({
                                     data: variant.imageUrls.map((url) => ({
                                         variantId: variant.id!,
@@ -904,11 +938,7 @@ export class ProductService {
                         }
                     } else {
                         // Create new variant
-                        if (
-                            variant.variantName &&
-                            variant.sku &&
-                            variant.stock !== undefined
-                        ) {
+                        if (variant.variantName && variant.sku && variant.stock !== undefined) {
                             const newVariant = await tx.productVariant.create({
                                 data: {
                                     productId: updatedProduct.id,
@@ -919,7 +949,6 @@ export class ProductService {
                                 },
                             });
 
-                            // Add variant images if provided
                             if (variant.imageUrls && variant.imageUrls.length > 0) {
                                 await tx.productVariantImage.createMany({
                                     data: variant.imageUrls.map((url) => ({
@@ -933,14 +962,12 @@ export class ProductService {
                 }
             }
 
-            // Handle tags replacement
+            // Handle tags (existing code)
             if (dto.tagIds !== undefined) {
-                // Delete all existing tags
                 await tx.productTag.deleteMany({
                     where: { productId: id },
                 });
 
-                // Create new tags
                 if (dto.tagIds.length > 0) {
                     await tx.productTag.createMany({
                         data: dto.tagIds.map((tagId) => ({
@@ -955,8 +982,6 @@ export class ProductService {
         });
 
         this.logger.info(`✅ Product updated: ${product.name} (${product.id})`);
-
-        // Fetch complete updated product data
         return this.getProductById(product.id);
     }
 
@@ -1041,6 +1066,7 @@ export class ProductService {
                         images: true,
                     },
                 },
+                images: true,
             },
         });
 
@@ -1048,19 +1074,17 @@ export class ProductService {
             throw new NotFoundException('Product not found');
         }
 
-        // Delete all images from Supabase
         const imageDeletionPromises: Promise<any>[] = [];
 
-        // Delete main product image
-        if (product.imageUrl) {
+        for (const image of product.images) {
             imageDeletionPromises.push(
-                this.localStorageService.deleteImage(product.imageUrl).catch(() => {
+                this.localStorageService.deleteImage(image.imageUrl).catch(() => {
                     this.logger.warn('Failed to delete product image');
                 }),
             );
         }
 
-        // Delete variant images
+        // Delete variant images (existing code)
         for (const variant of product.variants) {
             for (const image of variant.images) {
                 imageDeletionPromises.push(

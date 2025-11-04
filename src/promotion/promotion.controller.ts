@@ -9,7 +9,7 @@ import {
     Query,
     UseGuards,
     HttpCode,
-    HttpStatus, BadRequestException,
+    HttpStatus, BadRequestException, Inject,
 } from '@nestjs/common';
 import { PromotionService } from './promotion.service';
 import { ValidationService } from '../common/validation.service';
@@ -21,6 +21,8 @@ import { GetPromotionsDto, GetPromotionsSchema } from './dto/get-promotions.dto'
 import { CreatePromotionDto, CreatePromotionSchema } from './dto/create-promotion.dto';
 import { UpdatePromotionDto, UpdatePromotionSchema } from './dto/update-promotion.dto';
 import { Role } from '@prisma/client';
+import {WINSTON_MODULE_PROVIDER} from "nest-winston";
+import {Logger} from "winston";
 
 @Controller('promotions')
 export class PromotionController {
@@ -59,6 +61,7 @@ export class PromotionController {
 @Roles(Role.ADMIN, Role.OWNER)
 export class AdminPromotionController {
     constructor(
+        @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
         private promotionService: PromotionService,
         private validationService: ValidationService,
     ) {}
@@ -209,6 +212,7 @@ export class AdminPromotionController {
      */
     @Post('auto-update')
     async manualAutoUpdate() {
+        this.logger.info('🔧 Manual cron trigger by admin');
         return this.promotionService.autoUpdatePromotionStatus();
     }
 }

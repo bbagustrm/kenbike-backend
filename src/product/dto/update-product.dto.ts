@@ -1,14 +1,9 @@
 import { z } from 'zod';
 
 const UpdateVariantSchema = z.object({
-    id: z.string().uuid().optional(), // If provided, update existing variant
+    id: z.string().uuid().optional(),
     variantName: z.string().min(2).max(100).optional(),
-    sku: z
-        .string()
-        .min(3)
-        .max(50)
-        .regex(/^[a-zA-Z0-9-_]+$/)
-        .optional(),
+    sku: z.string().min(3).max(50).regex(/^[a-zA-Z0-9-_]+$/).optional(),
     stock: z.number().int().min(0).optional(),
     isActive: z.boolean().optional(),
     imageUrls: z.array(z.string().url()).optional(),
@@ -17,17 +12,14 @@ const UpdateVariantSchema = z.object({
 
 export const UpdateProductSchema = z.object({
     name: z.string().min(3).max(255).optional(),
-    slug: z
-        .string()
-        .min(3)
-        .max(255)
-        .regex(/^[a-z0-9-]+$/)
-        .optional(),
+    slug: z.string().min(3).max(255).regex(/^[a-z0-9-]+$/).optional(),
     idDescription: z.string().max(5000).optional(),
     enDescription: z.string().max(5000).optional(),
     idPrice: z.number().int().min(0).optional(),
     enPrice: z.number().int().min(0).optional(),
-    imageUrl: z.string().url().optional(),
+
+    imageUrls: z.array(z.string().url()).optional(),
+
     weight: z.number().int().min(0).optional(),
     height: z.number().int().min(0).optional(),
     length: z.number().int().min(0).optional(),
@@ -40,7 +32,7 @@ export const UpdateProductSchema = z.object({
     isPreOrder: z.boolean().optional(),
     preOrderDays: z.number().int().min(0).optional(),
     variants: z.array(UpdateVariantSchema).optional(),
-    tagIds: z.array(z.string().uuid()).optional(), // Replace all tags
+    tagIds: z.array(z.string().uuid()).optional(),
 });
 
 export type UpdateProductDto = z.infer<typeof UpdateProductSchema>;
