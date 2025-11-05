@@ -558,6 +558,20 @@ export class ProductService {
                         },
                     },
                 },
+                variants: {
+                    where: {
+                        deletedAt: null,
+                        isActive: true
+                    },
+                    select: {
+                        id: true,
+                        variantName: true,
+                        sku: true,
+                        stock: true,
+                        isActive: true,
+                    },
+                    take: 5,
+                },
                 images: {
                     orderBy: { order: 'asc' },
                     take: 5,
@@ -631,6 +645,20 @@ export class ProductService {
                         },
                     },
                 },
+                variants: {
+                    where: {
+                        deletedAt: null,
+                        isActive: true
+                    },
+                    select: {
+                        id: true,
+                        variantName: true,
+                        sku: true,
+                        stock: true,
+                        isActive: true,
+                    },
+                    take: 5,
+                },
                 images: {
                     orderBy: { order: 'asc' },
                     take: 5,
@@ -703,6 +731,20 @@ export class ProductService {
                             },
                         },
                     },
+                },
+                variants: {
+                    where: {
+                        deletedAt: null,
+                        isActive: true
+                    },
+                    select: {
+                        id: true,
+                        variantName: true,
+                        sku: true,
+                        stock: true,
+                        isActive: true,
+                    },
+                    take: 5,
                 },
                 images: {
                     orderBy: { order: 'asc' },
