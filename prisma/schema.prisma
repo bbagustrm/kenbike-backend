@@ -36,13 +36,14 @@ model User {
   lastLogin       DateTime? @map("last_login")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
-  deletedAt       DateTime? @map("deleted_at") // Soft delete
+  deletedAt       DateTime? @map("deleted_at")
 
   // Relations
   refreshTokens     RefreshToken[]
   passwordResets    PasswordReset[]
   blacklistedTokens BlacklistedToken[]
   review            Review[]
+  carts             Cart[]
 
   @@index([email])
   @@index([username])
@@ -135,11 +136,12 @@ model Product {
   promotionId String?    @map("promotion_id")
   promotion   Promotion? @relation(fields: [promotionId], references: [id])
 
-  tags     ProductTag[]
-  reviews  Review[]
-  variants ProductVariant[]
-  images   ProductImage[]
-  gallery  GalleryImage[]
+  tags      ProductTag[]
+  reviews   Review[]
+  variants  ProductVariant[]
+  images    ProductImage[]
+  gallery   GalleryImage[]
+  cartItems CartItem[]
 
   // ⚙️ Status & Features
   isActive     Boolean   @default(true) @map("is_active")
@@ -202,8 +204,9 @@ model ProductVariant {
   isActive  Boolean   @default(true) @map("is_active")
   deletedAt DateTime? @map("deleted_at") // Soft delete
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  cartItems CartItem[]
 
   @@index([productId])
   @@index([sku])
@@ -324,4 +327,39 @@ model ReviewImage {
 
   @@index([reviewId])
   @@map("review_images")
+}
+
+model Cart {
+  id     String     @id @default(uuid())
+  userId String     @unique @map("user_id")
+  items  CartItem[]
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("carts")
+}
+
+model CartItem {
+  id        String @id @default(uuid())
+  cartId    String @map("cart_id")
+  productId String @map("product_id")
+  variantId String @map("variant_id")
+  quantity  Int    @default(1)
+
+  cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([cartId, variantId]) // Prevent duplicate variants in same cart
+  @@index([cartId])
+  @@index([productId])
+  @@index([variantId])
+  @@map("cart_items")
 }

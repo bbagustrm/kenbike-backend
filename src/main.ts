@@ -14,14 +14,12 @@ async function bootstrap() {
   app.use(helmet());
   app.use(cookieParser());
 
-  // ✅ Parse allowed origins dari environment variable
   const allowedOrigins = process.env.CORS_ORIGIN
       ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
       : ['http://localhost:3001'];
 
   logger.log('info', `🔒 CORS Allowed Origins: ${allowedOrigins.join(', ')}`);
 
-  // ✅ PERBAIKAN: Static Assets dengan CORS Headers Lengkap (HANYA 1 KALI)
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: '/uploads/',
     setHeaders: (res, path, stat) => {
@@ -39,7 +37,6 @@ async function bootstrap() {
     },
   });
 
-  // ✅ CORS untuk API Routes (tidak berubah, sudah benar)
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, Postman)
