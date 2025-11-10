@@ -10,12 +10,42 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// ENUMS
+// ============================================
+
 // Enum untuk Role
 enum Role {
   USER
   ADMIN
   OWNER
 }
+
+enum OrderStatus {
+  PENDING // Order created, waiting payment
+  PAID // Payment confirmed
+  PROCESSING // Admin processing order
+  SHIPPED // Order shipped
+  DELIVERED // Order delivered
+  COMPLETED // Order completed (after user confirmation or auto)
+  CANCELLED // Order cancelled
+  FAILED // Payment failed
+}
+
+enum PaymentMethod {
+  MIDTRANS_SNAP // Midtrans Snap (all methods)
+  PAYPAL // PayPal
+  MANUAL // Manual transfer (for admin)
+}
+
+enum ShippingType {
+  DOMESTIC // Biteship API (Indonesia)
+  INTERNATIONAL // Manual zone-based
+}
+
+// ============================================
+// USER & AUTH MODELS
+// ============================================
 
 // Model User
 model User {
@@ -44,6 +74,7 @@ model User {
   blacklistedTokens BlacklistedToken[]
   review            Review[]
   carts             Cart[]
+  orders            Order[]
 
   @@index([email])
   @@index([username])
@@ -105,7 +136,11 @@ model PasswordReset {
   @@map("password_resets")
 }
 
-// Model Product (update)
+// ============================================
+// PRODUCT MODELS
+// ============================================
+
+// Model Product
 model Product {
   id            String  @id @default(uuid())
   name          String
@@ -136,12 +171,13 @@ model Product {
   promotionId String?    @map("promotion_id")
   promotion   Promotion? @relation(fields: [promotionId], references: [id])
 
-  tags      ProductTag[]
-  reviews   Review[]
-  variants  ProductVariant[]
-  images    ProductImage[]
-  gallery   GalleryImage[]
-  cartItems CartItem[]
+  tags       ProductTag[]
+  reviews    Review[]
+  variants   ProductVariant[]
+  images     ProductImage[]
+  gallery    GalleryImage[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
 
   // ⚙️ Status & Features
   isActive     Boolean   @default(true) @map("is_active")
@@ -197,16 +233,17 @@ model ProductVariant {
   sku         String @unique
   stock       Int    @default(0) @map("stock")
 
-  product Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
-  images  ProductVariantImage[]
+  product    Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  images     ProductVariantImage[]
+  cartItems  CartItem[]
+  orderItems OrderItem[] // ✅ PHASE 2: Added
 
   // ⚙️ Status
   isActive  Boolean   @default(true) @map("is_active")
   deletedAt DateTime? @map("deleted_at") // Soft delete
 
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
-  cartItems CartItem[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([productId])
   @@index([sku])
@@ -214,7 +251,7 @@ model ProductVariant {
   @@map("product_variants")
 }
 
-// Model ProductVariantImage (update)
+// Model ProductVariantImage
 model ProductVariantImage {
   id        String @id @default(uuid())
   variantId String @map("variant_id")
@@ -264,7 +301,7 @@ model Promotion {
   @@map("promotions")
 }
 
-// Model Tag (update)
+// Model Tag
 model Tag {
   id        String       @id @default(uuid())
   name      String       @unique
@@ -303,7 +340,7 @@ model Review {
   productId String        @map("product_id")
   rating    Int           @default(0) // 1-5
   comment   String?       @db.Text
-  images    ReviewImage[] // Ubah dari String[] ke relasi ke ReviewImage
+  images    ReviewImage[]
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -328,6 +365,10 @@ model ReviewImage {
   @@index([reviewId])
   @@map("review_images")
 }
+
+// ============================================
+// CART MODELS
+// ============================================
 
 model Cart {
   id     String     @id @default(uuid())
@@ -362,4 +403,133 @@ model CartItem {
   @@index([productId])
   @@index([variantId])
   @@map("cart_items")
+}
+
+// ============================================
+// ✅ PHASE 2: ORDER & SHIPPING MODELS
+// ============================================
+
+// Order Model
+model Order {
+  id          String @id @default(uuid())
+  orderNumber String @unique @map("order_number") // ORD-YYYYMMDD-XXXX
+  userId      String @map("user_id")
+
+  // Order Status
+  status OrderStatus @default(PENDING)
+
+  // Pricing
+  subtotal     Int // Total harga items sebelum discount
+  discount     Int @default(0) // Discount dari promotion/voucher
+  tax          Int // PPN 11%
+  shippingCost Int @map("shipping_cost")
+  total        Int // Grand total
+
+  // Currency & Exchange Rate
+  currency     String @default("IDR") // IDR atau USD
+  exchangeRate Float? @map("exchange_rate") // Rate saat order dibuat (untuk USD)
+
+  // Payment Info
+  paymentMethod   PaymentMethod? @map("payment_method")
+  paymentProvider String?        @map("payment_provider") // "midtrans", "paypal"
+  paymentId       String?        @map("payment_id") // Transaction ID dari provider
+
+  // Shipping Info
+  shippingType   ShippingType @map("shipping_type")
+  shippingMethod String       @map("shipping_method") // e.g., "JNE REG", "Zone 1"
+
+  // Biteship fields (for domestic)
+  biteshipCourier String? @map("biteship_courier") // "jne", "tiki", etc.
+  biteshipService String? @map("biteship_service") // "reg", "yes", etc.
+  biteshipOrderId String? @unique @map("biteship_order_id") // Biteship order ID
+  trackingNumber  String? @unique @map("tracking_number") // AWB/tracking number
+
+  // International shipping
+  shippingZoneId String?       @map("shipping_zone_id")
+  shippingZone   ShippingZone? @relation(fields: [shippingZoneId], references: [id])
+
+  // Recipient Details
+  recipientName      String  @map("recipient_name")
+  recipientPhone     String  @map("recipient_phone")
+  shippingAddress    String  @map("shipping_address")
+  shippingCity       String  @map("shipping_city")
+  shippingProvince   String? @map("shipping_province") // For domestic
+  shippingCountry    String  @map("shipping_country")
+  shippingPostalCode String  @map("shipping_postal_code")
+  shippingNotes      String? @map("shipping_notes")
+
+  // Timestamps
+  paidAt      DateTime? @map("paid_at")
+  shippedAt   DateTime? @map("shipped_at")
+  deliveredAt DateTime? @map("delivered_at")
+  completedAt DateTime? @map("completed_at")
+  canceledAt  DateTime? @map("canceled_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items OrderItem[]
+
+  @@index([userId])
+  @@index([orderNumber])
+  @@index([status])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+// Order Item Model
+model OrderItem {
+  id        String @id @default(uuid())
+  orderId   String @map("order_id")
+  productId String @map("product_id")
+  variantId String @map("variant_id")
+
+  // Snapshot data (untuk history, case product/variant dihapus)
+  productName  String @map("product_name")
+  variantName  String @map("variant_name")
+  sku          String
+  quantity     Int
+  pricePerItem Int    @map("price_per_item") // Harga per item saat order
+  discount     Int    @default(0) // Discount per item dari promotion
+  subtotal     Int // (pricePerItem - discount) * quantity
+
+  // Image snapshot
+  productImage String? @map("product_image")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+  @@map("order_items")
+}
+
+// Shipping Zone Model (for international shipping)
+model ShippingZone {
+  id        String   @id @default(uuid())
+  name      String   @unique // e.g., "Zone 1 - Asia", "Zone 2 - Europe"
+  countries String[] // Array of country codes: ["SG", "MY", "TH"]
+
+  // Pricing
+  baseRate  Int @map("base_rate") // Base shipping fee
+  perKgRate Int @map("per_kg_rate") // Additional per kg
+
+  // Delivery estimate
+  minDays Int @map("min_days")
+  maxDays Int @map("max_days")
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  orders Order[]
+
+  @@map("shipping_zones")
 }
