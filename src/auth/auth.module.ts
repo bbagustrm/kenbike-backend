@@ -9,6 +9,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { APP_GUARD } from '@nestjs/core';
 import {LocalStorageService} from "../common/storage/local-storage.service";
+import {EmailService} from "../common/email.service";
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import {LocalStorageService} from "../common/storage/local-storage.service";
     AuthService,
     LocalStorageService,
     JwtStrategy,
+    EmailService,
     // Apply JwtAuthGuard globally to all routes
     {
       provide: APP_GUARD,
