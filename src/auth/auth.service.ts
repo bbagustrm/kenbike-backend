@@ -20,6 +20,7 @@ import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import {LocalStorageService} from "../common/storage/local-storage.service";
 import { Request } from 'express';
+import {EmailService} from "../common/email.service";
 
 @Injectable()
 export class AuthService {
@@ -27,6 +28,7 @@ export class AuthService {
         private prisma: PrismaService,
         private localStorageService: LocalStorageService,
         private configService: ConfigService,
+        private emailService: EmailService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
@@ -285,6 +287,8 @@ export class AuthService {
 
         // For security, always return success even if email doesn't exist
         if (!user) {
+            // Log attempt but still return success message
+            this.logger.warn(`Password reset requested for non-existent email: ${dto.email}`);
             return {
                 message: 'Password reset link has been sent to your email',
             };
@@ -308,13 +312,29 @@ export class AuthService {
             },
         });
 
-        // TODO: Send email with reset link
-        // await this.mailService.sendPasswordResetEmail(user.email, resetToken);
+        // Send reset password email
+        try {
+            await this.emailService.sendPasswordResetEmail(user.email, resetToken);
+            this.logger.info(`Password reset email sent to: ${user.email}`);
+        } catch (error) {
+            this.logger.error(`Failed to send password reset email to ${user.email}:`, error);
+            // Don't throw error to user for security reasons
+        }
 
         this.logger.info(`Password reset requested for: ${user.email}`);
 
+        // Return token only in development mode
+        const isDevelopment = process.env.NODE_ENV === 'development';
+
         return {
             message: 'Password reset link has been sent to your email',
+            ...(isDevelopment && {
+                data: {
+                    token: resetToken,
+                    // Also provide direct reset link for easier testing
+                    reset_link: `${this.configService.get('FRONTEND_URL')}/reset-password?token=${resetToken}`
+                }
+            }),
         };
     }
 
