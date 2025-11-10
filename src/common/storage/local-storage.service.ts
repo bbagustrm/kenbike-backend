@@ -109,7 +109,6 @@ export class LocalStorageService {
                 );
             }
 
-            // ✅ Dynamic file size validation based on folder
             const maxSize = folder === 'gallery' ? 5 * 1024 * 1024 : 2 * 1024 * 1024; // 5MB for gallery, 2MB for others
             if (file.size > maxSize) {
                 const maxSizeMB = folder === 'gallery' ? 5 : 2;
@@ -218,6 +217,14 @@ export class LocalStorageService {
         }
     }
 
+    /**
+     * Delete a single file by URL or path
+     * This is an alias for deleteImage for better naming consistency
+     */
+    async deleteFile(fileUrl: string): Promise<void> {
+        return this.deleteImage(fileUrl);
+    }
+
     async deleteImage(imageUrl: string): Promise<void> {
         try {
             if (!imageUrl) return;
@@ -245,6 +252,15 @@ export class LocalStorageService {
             const absoluteUploadDir = path.resolve(this.uploadDir);
             const filePath = path.join(absoluteUploadDir, relativePath);
 
+            // Security check: ensure the file is within the upload directory
+            const normalizedFilePath = path.normalize(filePath);
+            const normalizedUploadDir = path.normalize(absoluteUploadDir);
+
+            if (!normalizedFilePath.startsWith(normalizedUploadDir)) {
+                this.logger.warn(`⚠️ Security: Attempted to delete file outside upload directory: ${filePath}`);
+                return;
+            }
+
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);
                 this.logger.info(`🗑️ Image deleted: ${filePath}`);
@@ -256,12 +272,93 @@ export class LocalStorageService {
                 error: error.message,
                 url: imageUrl,
             });
+            // Don't throw error, just log it
+            // This prevents deletion failures from breaking other operations
         }
     }
 
     async deleteImages(imageUrls: string[]): Promise<void> {
         for (const url of imageUrls) {
             await this.deleteImage(url);
+        }
+    }
+
+    /**
+     * Delete multiple files by URLs or paths
+     * This is an alias for deleteImages for better naming consistency
+     */
+    async deleteFiles(fileUrls: string[]): Promise<void> {
+        return this.deleteImages(fileUrls);
+    }
+
+    /**
+     * Check if a file exists
+     */
+    fileExists(fileUrl: string): boolean {
+        try {
+            if (!fileUrl) return false;
+
+            let relativePath: string;
+
+            if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+                try {
+                    const url = new URL(fileUrl);
+                    relativePath = url.pathname.replace(/^\/uploads\//, '');
+                } catch (urlError) {
+                    return false;
+                }
+            } else {
+                const urlParts = fileUrl.split('/uploads/');
+                if (urlParts.length < 2) {
+                    return false;
+                }
+                relativePath = urlParts[1];
+            }
+
+            const absoluteUploadDir = path.resolve(this.uploadDir);
+            const filePath = path.join(absoluteUploadDir, relativePath);
+
+            return fs.existsSync(filePath);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * Get file size in bytes
+     */
+    getFileSize(fileUrl: string): number | null {
+        try {
+            if (!fileUrl) return null;
+
+            let relativePath: string;
+
+            if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+                try {
+                    const url = new URL(fileUrl);
+                    relativePath = url.pathname.replace(/^\/uploads\//, '');
+                } catch (urlError) {
+                    return null;
+                }
+            } else {
+                const urlParts = fileUrl.split('/uploads/');
+                if (urlParts.length < 2) {
+                    return null;
+                }
+                relativePath = urlParts[1];
+            }
+
+            const absoluteUploadDir = path.resolve(this.uploadDir);
+            const filePath = path.join(absoluteUploadDir, relativePath);
+
+            if (fs.existsSync(filePath)) {
+                const stats = fs.statSync(filePath);
+                return stats.size;
+            }
+
+            return null;
+        } catch (error) {
+            return null;
         }
     }
 }
