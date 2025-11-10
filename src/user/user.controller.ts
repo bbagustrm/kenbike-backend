@@ -10,7 +10,8 @@ import {
     UseGuards,
     HttpCode,
     HttpStatus,
-    ParseBoolPipe, UseInterceptors,
+    ParseBoolPipe,
+    UseInterceptors,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { ValidationService } from '../common/validation.service';
@@ -26,7 +27,7 @@ import { CreateUserDto, CreateUserSchema } from './dto/create-user.dto';
 import { UpdateUserDto, UpdateUserSchema } from './dto/update-user.dto';
 import { ChangeRoleDto, ChangeRoleSchema } from './dto/change-role.dto';
 import { ChangeStatusDto, ChangeStatusSchema } from './dto/change-status.dto';
-import {FileInterceptor} from "@nestjs/platform-express";
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('admin/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -119,6 +120,16 @@ export class UserController {
         @Query('permanent', new ParseBoolPipe({ optional: true })) permanent?: boolean,
     ) {
         return this.userService.deleteUser(userId, currentUserId, permanent || false);
+    }
+
+    /**
+     * POST /admin/users/:id/restore
+     * Restore soft deleted user (Admin only)
+     */
+    @Post(':id/restore')
+    @HttpCode(HttpStatus.OK)
+    async restoreUser(@Param('id') userId: string) {
+        return this.userService.restoreUser(userId);
     }
 
     /**
