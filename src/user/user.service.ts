@@ -29,15 +29,21 @@ export class UserService {
      * Get all users with pagination, filter, and search
      */
     async getAllUsers(dto: GetAllUsersDto) {
-        const { page, limit, role, search, sort_by, order } = dto;
+        const { page, limit, role, search, sort_by, order, includeDeleted, onlyDeleted } = dto;
 
         // Validate pagination params
         const { page: validPage, limit: validLimit } = PaginationUtil.validateParams(page, limit);
 
         // Build where clause
-        const where: any = {
-            deletedAt: null, // Exclude soft deleted users
-        };
+        const where: any = {};
+
+        // Handle deleted users filter
+        if (onlyDeleted) {
+            where.deletedAt = { not: null };
+        } else if (!includeDeleted) {
+            where.deletedAt = null;
+        }
+        // If includeDeleted is true and onlyDeleted is false, we don't filter by deletedAt
 
         if (role) {
             where.role = role;
@@ -70,6 +76,7 @@ export class UserService {
                 phoneNumber: true,
                 country: true,
                 createdAt: true,
+                deletedAt: true, // Include deletedAt in response
             },
             skip: PaginationUtil.getSkip(validPage, validLimit),
             take: validLimit,
@@ -91,6 +98,7 @@ export class UserService {
             phone_number: user.phoneNumber,
             country: user.country,
             created_at: user.createdAt,
+            deleted_at: user.deletedAt, // Include in response
         }));
 
         return {
@@ -396,8 +404,13 @@ export class UserService {
             where: { id: userId },
         });
 
-        if (!user || user.deletedAt) {
+        if (!user) {
             throw new NotFoundException('User not found');
+        }
+
+        // For permanent delete, check if already soft deleted
+        if (permanent && !user.deletedAt) {
+            throw new ForbiddenException('User must be soft deleted before permanent deletion');
         }
 
         // Prevent deleting yourself
@@ -411,7 +424,15 @@ export class UserService {
         }
 
         if (permanent) {
-            // Hard delete
+            // Hard delete - also delete profile image if exists
+            if (user.profileImage) {
+                try {
+                    await this.localStorageService.deleteFile(user.profileImage);
+                } catch (error) {
+                    this.logger.warn(`Failed to delete profile image: ${error.message}`);
+                }
+            }
+
             await this.prisma.user.delete({
                 where: { id: userId },
             });
@@ -431,7 +452,61 @@ export class UserService {
         });
 
         return {
-            message: 'User deleted successfully',
+            message: permanent ? 'User permanently deleted successfully' : 'User deleted successfully',
+        };
+    }
+
+    /**
+     * Restore soft deleted user
+     */
+    async restoreUser(userId: string) {
+        // Check if user exists and is soft deleted
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+        });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        if (!user.deletedAt) {
+            throw new ConflictException('User is not deleted');
+        }
+
+        // Restore user
+        const restoredUser = await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                deletedAt: null,
+                // Optionally reactivate the user on restore
+                isActive: true,
+            },
+            select: {
+                id: true,
+                email: true,
+                username: true,
+                firstName: true,
+                lastName: true,
+                role: true,
+                isActive: true,
+                updatedAt: true,
+            },
+        });
+
+        this.logger.info(`User restored: ${restoredUser.email}`);
+
+        return {
+            message: 'User restored successfully',
+            data: {
+                id: restoredUser.id,
+                email: restoredUser.email,
+                username: restoredUser.username,
+                first_name: restoredUser.firstName,
+                last_name: restoredUser.lastName,
+                role: restoredUser.role,
+                is_active: restoredUser.isActive,
+                updated_at: restoredUser.updatedAt,
+            },
         };
     }
 
