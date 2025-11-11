@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { BiteshipService } from './biteship.service';
 import { InternationalShippingService } from './international-shipping.service';
+import { BiteshipOrderRequest } from './interfaces/shipping.interface';
 import { PaginationUtil } from '../utils/pagination.util';
 import {
     CalculateShippingDto,
@@ -44,9 +45,6 @@ export class OrderService {
         this.usdToIdrRate = parseFloat(this.configService.get<string>('USD_TO_IDR_RATE') || '15700');
     }
 
-    /**
-     * Calculate shipping options for user's destination
-     */
     async calculateShipping(
         userId: string,
         dto: CalculateShippingDto,
@@ -61,13 +59,10 @@ export class OrderService {
         });
 
         const options: ShippingOption[] = [];
-
-        // Determine shipping type
         const isDomestic = country.toUpperCase() === 'ID';
         const shippingType = isDomestic ? 'DOMESTIC' : 'INTERNATIONAL';
 
         if (isDomestic) {
-            // DOMESTIC SHIPPING - Use Biteship API
             if (!this.biteshipService.isConfigured()) {
                 throw new BadRequestException(
                     'Domestic shipping is not configured. Please contact support.',
@@ -75,24 +70,21 @@ export class OrderService {
             }
 
             try {
-                // Prepare items for Biteship (simplified)
                 const items = [
                     {
                         name: 'Order Items',
-                        value: 100000, // Dummy value, actual value will be in order
+                        value: 100000,
                         weight: total_weight,
                         quantity: 1,
                     },
                 ];
 
-                // Get rates from Biteship
                 const ratesResponse = await this.biteshipService.getRates(
                     postal_code,
                     items,
                     courier,
                 );
 
-                // Transform Biteship response to our format
                 for (const rate of ratesResponse.pricing) {
                     options.push({
                         type: 'DOMESTIC',
@@ -105,7 +97,7 @@ export class OrderService {
                         biteshipPriceId: `${rate.courier_code}_${rate.type}`,
                         insurance: {
                             required: rate.available_for_insurance,
-                            fee: 0, // Will be calculated if user opts in
+                            fee: 0,
                         },
                     });
                 }
@@ -116,7 +108,6 @@ export class OrderService {
                 throw error;
             }
         } else {
-            // INTERNATIONAL SHIPPING - Use zone-based calculation
             try {
                 const calculation = await this.internationalShippingService.calculateShippingCost(
                     country,
@@ -163,9 +154,6 @@ export class OrderService {
         };
     }
 
-    /**
-     * Parse duration string like "2 - 3" to {min: 2, max: 3}
-     */
     private parseDuration(duration: string): { min: number; max: number } {
         const parts = duration.split('-').map((s) => parseInt(s.trim()));
         return {
@@ -174,14 +162,10 @@ export class OrderService {
         };
     }
 
-    /**
-     * Generate unique order number: ORD-YYYYMMDD-XXXX
-     */
     private async generateOrderNumber(): Promise<string> {
         const date = new Date();
         const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
 
-        // Get count of orders today
         const startOfDay = new Date(date.setHours(0, 0, 0, 0));
         const endOfDay = new Date(date.setHours(23, 59, 59, 999));
 
@@ -198,9 +182,6 @@ export class OrderService {
         return `ORD-${dateStr}-${sequence}`;
     }
 
-    /**
-     * Calculate order totals
-     */
     private calculateOrderTotals(
         subtotal: number,
         discount: number,
@@ -225,13 +206,9 @@ export class OrderService {
         };
     }
 
-    /**
-     * Create order from cart
-     */
     async createOrder(userId: string, dto: CreateOrderDto): Promise<CreateOrderResponse> {
         this.logger.info('🛒 Creating order from cart', { userId });
 
-        // 1. Get user's cart with items
         const cart = await this.prisma.cart.findUnique({
             where: { userId },
             include: {
@@ -258,7 +235,6 @@ export class OrderService {
             throw new BadRequestException('Cart is empty');
         }
 
-        // 2. Validate all items availability
         for (const item of cart.items) {
             if (!item.product.isActive || item.product.deletedAt) {
                 throw new BadRequestException(`Product ${item.product.name} is no longer available`);
@@ -278,7 +254,6 @@ export class OrderService {
             }
         }
 
-        // 3. Calculate cart totals
         let subtotal = 0;
         let totalDiscount = 0;
         let totalWeight = 0;
@@ -288,7 +263,6 @@ export class OrderService {
                 ? item.product.enPrice
                 : item.product.idPrice;
 
-            // Calculate discount from promotion
             const discount = item.product.promotion
                 ? Math.round(basePrice * item.product.promotion.discount)
                 : 0;
@@ -300,7 +274,6 @@ export class OrderService {
             subtotal += itemSubtotal;
             totalDiscount += itemDiscount;
 
-            // Calculate weight
             const itemWeight = (item.product.weight || 0) * item.quantity;
             totalWeight += itemWeight;
 
@@ -318,7 +291,6 @@ export class OrderService {
             };
         });
 
-        // 4. Calculate shipping cost
         let shippingCost = 0;
         let shippingData: any = {};
 
@@ -358,16 +330,10 @@ export class OrderService {
             };
         }
 
-        // 5. Calculate final totals
         const totals = this.calculateOrderTotals(subtotal, totalDiscount, shippingCost);
-
-        // 6. Generate order number
         const orderNumber = await this.generateOrderNumber();
-
-        // 7. Convert to USD if needed
         const exchangeRate = dto.currency === 'USD' ? this.usdToIdrRate : undefined;
 
-        // 8. Create order in transaction
         const order = await this.prisma.$transaction(async (tx) => {
             const newOrder = await tx.order.create({
                 data: {
@@ -832,6 +798,9 @@ export class OrderService {
         };
     }
 
+    /**
+     * 🔥 PHASE 2.5: Update order status with Biteship integration
+     */
     async updateOrderStatus(orderNumber: string, dto: UpdateOrderStatusDto) {
         const order = await this.prisma.order.findUnique({
             where: { orderNumber },
@@ -863,9 +832,71 @@ export class OrderService {
             status: dto.status,
         };
 
+        // ✅ PHASE 2.5: Create order in Biteship when SHIPPED
         if (dto.status === 'SHIPPED') {
             updateData.shippedAt = new Date();
-            updateData.trackingNumber = dto.tracking_number;
+
+            // For DOMESTIC shipping, create order in Biteship
+            if (order.shippingType === 'DOMESTIC' && order.biteshipCourier && order.biteshipService) {
+                try {
+                    this.logger.info('🚀 Creating order in Biteship', { orderNumber });
+
+                    // Prepare Biteship order request
+                    const biteshipOrderData: BiteshipOrderRequest = {
+                        origin_postal_code: this.configService.get<string>('WAREHOUSE_POSTAL_CODE') || '',
+                        destination_postal_code: order.shippingPostalCode,
+                        courier_company: order.biteshipCourier,
+                        courier_type: order.biteshipService,
+                        delivery_type: 'now',
+                        order_note: order.shippingNotes || '',
+                        items: order.items.map(item => ({
+                            name: item.productName,
+                            value: item.subtotal,
+                            weight: 1000, // Default weight, adjust as needed
+                            quantity: item.quantity,
+                        })),
+                        shipper_contact_name: this.configService.get<string>('WAREHOUSE_NAME') || 'Kenbike Store',
+                        shipper_contact_phone: this.configService.get<string>('WAREHOUSE_PHONE') || '',
+                        shipper_contact_email: this.configService.get<string>('MAIL_FROM') || '',
+                        shipper_organization: this.configService.get<string>('WAREHOUSE_NAME') || 'Kenbike Store',
+                        origin_contact_name: this.configService.get<string>('WAREHOUSE_NAME') || 'Kenbike Store',
+                        origin_contact_phone: this.configService.get<string>('WAREHOUSE_PHONE') || '',
+                        origin_address: this.configService.get<string>('WAREHOUSE_ADDRESS') || '',
+                        destination_contact_name: order.recipientName,
+                        destination_contact_phone: order.recipientPhone,
+                        destination_contact_email: '', // Optional
+                        destination_address: order.shippingAddress,
+                        destination_note: order.shippingNotes || '',
+                    };
+
+                    // Create order in Biteship
+                    const biteshipResponse = await this.biteshipService.createOrder(biteshipOrderData);
+
+                    // Save Biteship response to database
+                    updateData.biteshipOrderId = biteshipResponse.id;
+                    updateData.trackingNumber = biteshipResponse.courier.tracking_id || biteshipResponse.courier.waybill_id;
+
+                    this.logger.info('✅ Biteship order created successfully', {
+                        orderNumber,
+                        biteshipOrderId: biteshipResponse.id,
+                        trackingNumber: updateData.trackingNumber,
+                    });
+                } catch (error: any) {
+                    this.logger.error('❌ Failed to create Biteship order', {
+                        orderNumber,
+                        error: error.message,
+                    });
+                    throw new BadRequestException(
+                        `Failed to create shipping order in Biteship: ${error.message}`,
+                    );
+                }
+            } else {
+                // For INTERNATIONAL or manual tracking
+                if (!dto.tracking_number) {
+                    throw new BadRequestException('Tracking number is required for international shipments');
+                }
+                updateData.trackingNumber = dto.tracking_number;
+            }
         } else if (dto.status === 'DELIVERED') {
             updateData.deliveredAt = new Date();
         } else if (dto.status === 'COMPLETED') {
@@ -906,11 +937,15 @@ export class OrderService {
                 order_number: updatedOrder.orderNumber,
                 status: updatedOrder.status,
                 tracking_number: updatedOrder.trackingNumber,
+                biteship_order_id: updatedOrder.biteshipOrderId,
                 updated_at: updatedOrder.updatedAt,
             },
         };
     }
 
+    /**
+     * 🔥 PHASE 2.5: Get tracking info with full history from Biteship
+     */
     async getTrackingInfo(userId: string, orderNumber: string) {
         const order = await this.prisma.order.findUnique({
             where: { orderNumber },
@@ -928,6 +963,7 @@ export class OrderService {
             throw new BadRequestException('Order has not been shipped yet');
         }
 
+        // For DOMESTIC shipping with Biteship
         if (order.shippingType === 'DOMESTIC' && order.biteshipOrderId) {
             try {
                 const tracking = await this.biteshipService.trackShipment(order.biteshipOrderId);
@@ -949,9 +985,11 @@ export class OrderService {
                 };
             } catch (error) {
                 this.logger.error('Failed to get Biteship tracking', { error });
+                // Fallback to basic tracking
             }
         }
 
+        // For INTERNATIONAL or if Biteship fails
         return {
             data: {
                 order_number: order.orderNumber,
@@ -962,5 +1000,81 @@ export class OrderService {
                 delivered_at: order.deliveredAt,
             },
         };
+    }
+
+    /**
+     * 🆕 PHASE 2.5: Get shipping label URL (User)
+     */
+    async getShippingLabel(userId: string, orderNumber: string) {
+        const order = await this.prisma.order.findUnique({
+            where: { orderNumber },
+        });
+
+        if (!order) {
+            throw new NotFoundException('Order not found');
+        }
+
+        if (order.userId !== userId) {
+            throw new ForbiddenException('Access denied');
+        }
+
+        if (order.status !== 'SHIPPED' && order.status !== 'DELIVERED' && order.status !== 'COMPLETED') {
+            throw new BadRequestException('Order has not been shipped yet');
+        }
+
+        if (order.shippingType !== 'DOMESTIC' || !order.biteshipOrderId) {
+            throw new BadRequestException('Shipping label is only available for domestic orders');
+        }
+
+        try {
+            const labelUrl = await this.biteshipService.getShippingLabel(order.biteshipOrderId);
+
+            return {
+                data: {
+                    order_number: order.orderNumber,
+                    tracking_number: order.trackingNumber,
+                    label_url: labelUrl,
+                },
+            };
+        } catch (error: any) {
+            this.logger.error('Failed to get shipping label', { orderNumber, error: error.message });
+            throw error;
+        }
+    }
+
+    /**
+     * 🆕 PHASE 2.5: Get shipping label URL (Admin)
+     */
+    async getShippingLabelAdmin(orderNumber: string) {
+        const order = await this.prisma.order.findUnique({
+            where: { orderNumber },
+        });
+
+        if (!order) {
+            throw new NotFoundException('Order not found');
+        }
+
+        if (order.status !== 'SHIPPED' && order.status !== 'DELIVERED' && order.status !== 'COMPLETED') {
+            throw new BadRequestException('Order has not been shipped yet');
+        }
+
+        if (order.shippingType !== 'DOMESTIC' || !order.biteshipOrderId) {
+            throw new BadRequestException('Shipping label is only available for domestic orders');
+        }
+
+        try {
+            const labelUrl = await this.biteshipService.getShippingLabel(order.biteshipOrderId);
+
+            return {
+                data: {
+                    order_number: order.orderNumber,
+                    tracking_number: order.trackingNumber,
+                    label_url: labelUrl,
+                },
+            };
+        } catch (error: any) {
+            this.logger.error('Failed to get shipping label', { orderNumber, error: error.message });
+            throw error;
+        }
     }
 }

@@ -138,4 +138,16 @@ export class OrderController {
     ) {
         return this.orderService.getTrackingInfo(userId, orderNumber);
     }
+
+    /**
+     * 🆕 GET /orders/:orderNumber/shipping-label
+     * Get shipping label URL (for users)
+     */
+    @Get(':orderNumber/shipping-label')
+    async getShippingLabel(
+        @CurrentUser('id') userId: string,
+        @Param('orderNumber') orderNumber: string,
+    ) {
+        return this.orderService.getShippingLabel(userId, orderNumber);
+    }
 }
