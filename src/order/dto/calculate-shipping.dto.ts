@@ -15,8 +15,9 @@ export const CalculateShippingSchema = z.object({
     // Weight (in grams)
     total_weight: z.number().int().min(1).max(30000), // Max 30kg
 
-    // Courier preference (for domestic)
-    courier: z.enum(['jne', 'tiki', 'sicepat', 'jnt', 'pos', 'anteraja', 'all']).optional(),
+    // Courier preference (for domestic) - comma separated or leave empty for all
+    // Examples: "jne,tiki" or "jne" or leave empty to get all available couriers
+    courier: z.string().optional(),
 });
 
 export type CalculateShippingDto = z.infer<typeof CalculateShippingSchema>;

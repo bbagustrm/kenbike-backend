@@ -93,4 +93,16 @@ export class AdminOrderController {
 
         return this.orderService.updateOrderStatus(orderNumber, dto);
     }
+
+    /**
+     * 🆕 GET /admin/orders/:orderNumber/shipping-label
+     * Get shipping label URL
+     */
+    @Get(':orderNumber/shipping-label')
+    async getShippingLabel(
+        @Param('orderNumber') orderNumber: string,
+    ) {
+        return this.orderService.getShippingLabelAdmin(orderNumber);
+    }
+
 }

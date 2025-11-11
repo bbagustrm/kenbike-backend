@@ -49,7 +49,7 @@ export type CancelOrderDto = z.infer<typeof CancelOrderSchema>;
  * DTO for updating order status (Admin)
  */
 export const UpdateOrderStatusSchema = z.object({
-    status: z.enum(['PROCESSING', 'SHIPPED', 'DELIVERED', 'COMPLETED', 'CANCELLED']),
+    status: z.enum(['PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED']),
     tracking_number: z.string().optional(), // Required when status = SHIPPED
     notes: z.string().max(500).optional(),
 }).refine(
