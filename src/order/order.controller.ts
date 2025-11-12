@@ -1,3 +1,5 @@
+// ✅ UPDATED ORDER CONTROLLER - Save this as: src/order/order.controller.ts
+
 import {
     Controller,
     Get,
@@ -140,14 +142,18 @@ export class OrderController {
     }
 
     /**
-     * 🆕 GET /orders/:orderNumber/shipping-label
-     * Get shipping label URL (for users)
+     * ✅ NEW: GET /orders/:orderNumber/shipping-label
+     * Get shipping label URL
      */
     @Get(':orderNumber/shipping-label')
     async getShippingLabel(
         @CurrentUser('id') userId: string,
         @Param('orderNumber') orderNumber: string,
     ) {
-        return this.orderService.getShippingLabel(userId, orderNumber);
+        // First verify user owns the order
+        await this.orderService.getOrderDetail(userId, orderNumber);
+
+        // Then get shipping label
+        return this.orderService.getShippingLabel(orderNumber);
     }
 }

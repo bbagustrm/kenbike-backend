@@ -1,3 +1,4 @@
+//  src/order/order.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { OrderController } from './order.controller';
@@ -7,6 +8,7 @@ import { OrderService } from './order.service';
 import { BiteshipService } from './biteship.service';
 import { BiteshipWebhookService } from './biteship-webhook.service';
 import { InternationalShippingService } from './international-shipping.service';
+import { OrderCompletionCron } from './cron/order-completion.cron';
 import { PrismaService } from '../common/prisma.service';
 import { ValidationService } from '../common/validation.service';
 
@@ -15,16 +17,17 @@ import { ValidationService } from '../common/validation.service';
   controllers: [
     OrderController,
     AdminOrderController,
-    BiteshipWebhookController, // ✅ NEW: Webhook controller
+    BiteshipWebhookController,
   ],
   providers: [
     OrderService,
     BiteshipService,
-    BiteshipWebhookService, // ✅ NEW: Webhook service
+    BiteshipWebhookService,
     InternationalShippingService,
+    OrderCompletionCron,
     PrismaService,
     ValidationService,
   ],
-  exports: [OrderService, BiteshipWebhookService],
+  exports: [OrderService],
 })
 export class OrderModule {}

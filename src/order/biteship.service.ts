@@ -1,3 +1,5 @@
+// ✅ UPDATED BITESHIP SERVICE - Save this as: src/order/biteship.service.ts
+
 import { Injectable, Inject, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'winston';
@@ -30,16 +32,20 @@ export class BiteshipService {
             this.logger.warn('⚠️  Biteship API key not configured. Domestic shipping will not work.');
         }
 
+        // Create axios instance with auth header
         this.client = axios.create({
             baseURL: this.baseUrl,
             headers: {
                 'Authorization': this.apiKey,
                 'Content-Type': 'application/json',
             },
-            timeout: 30000,
+            timeout: 30000, // 30 seconds
         });
     }
 
+    /**
+     * Calculate shipping rates for domestic Indonesia
+     */
     async getRates(
         destinationPostalCode: string,
         items: Array<{ name: string; value: number; weight: number; quantity: number }>,
@@ -52,10 +58,15 @@ export class BiteshipService {
                 throw new BadRequestException('Warehouse postal code not configured');
             }
 
+            // Determine which couriers to use
             let couriersToUse: string;
+
             if (!courier || courier.trim() === '') {
+                // If no courier specified, use all configured couriers
                 couriersToUse = this.availableCouriers.join(',');
             } else {
+                // Use the specified courier(s)
+                // Validate that all specified couriers are in available list
                 const requestedCouriers = courier.split(',').map(c => c.trim().toLowerCase());
                 const validCouriers = requestedCouriers.filter(c =>
                     this.availableCouriers.includes(c)
@@ -66,6 +77,7 @@ export class BiteshipService {
                         `Invalid courier(s). Available: ${this.availableCouriers.join(', ')}`
                     );
                 }
+
                 couriersToUse = validCouriers.join(',');
             }
 
@@ -94,6 +106,7 @@ export class BiteshipService {
             }
 
             this.logger.info(`✅ Biteship: Found ${response.data.pricing.length} shipping options`);
+
             return response.data;
         } catch (error: any) {
             this.logger.error('❌ Biteship: Failed to get rates', {
@@ -102,14 +115,18 @@ export class BiteshipService {
                 status: error.response?.status,
             });
 
+            // Handle specific Biteship API errors
             if (error.response?.status === 400) {
                 const biteshipError = error.response.data;
+
+                // Log the full Biteship error for debugging
                 this.logger.error('🔍 Biteship API Error Details:', {
                     message: biteshipError.message,
                     error: biteshipError.error,
                     code: biteshipError.code,
                 });
 
+                // Return more specific error messages
                 if (biteshipError.error?.includes('postal')) {
                     throw new BadRequestException(
                         `Invalid postal code. Origin: ${this.configService.get('WAREHOUSE_POSTAL_CODE')}, ` +
@@ -127,6 +144,7 @@ export class BiteshipService {
                 throw new BadRequestException('Biteship authentication failed. Please contact support.');
             }
 
+            // If it's already a BadRequestException, rethrow it
             if (error instanceof BadRequestException) {
                 throw error;
             }
@@ -135,6 +153,9 @@ export class BiteshipService {
         }
     }
 
+    /**
+     * Create shipping order with Biteship
+     */
     async createOrder(orderData: BiteshipOrderRequest): Promise<BiteshipOrderResponse> {
         try {
             this.logger.info('📦 Biteship: Creating shipping order', {
@@ -171,6 +192,9 @@ export class BiteshipService {
         }
     }
 
+    /**
+     * Track shipment
+     */
     async trackShipment(biteshipOrderId: string): Promise<BiteshipTrackingResponse> {
         try {
             this.logger.info('📦 Biteship: Tracking shipment', { orderId: biteshipOrderId });
@@ -199,23 +223,31 @@ export class BiteshipService {
         }
     }
 
+    /**
+     * ✅ NEW: Get shipping label URL
+     */
     async getShippingLabel(biteshipOrderId: string): Promise<string> {
         try {
             this.logger.info('📄 Biteship: Getting shipping label', { orderId: biteshipOrderId });
 
-            const response = await this.client.get(`/orders/${biteshipOrderId}`);
+            const response = await this.client.get<BiteshipOrderResponse>(
+                `/orders/${biteshipOrderId}`,
+            );
 
             if (!response.data.success) {
-                throw new BadRequestException('Failed to get shipping label');
+                throw new BadRequestException(response.data.message || 'Failed to get shipping label');
             }
 
-            const labelUrl = response.data.courier?.label_url || response.data.courier?.waybill_id;
+            const labelUrl = response.data.courier?.waybill_id
+                ? `https://biteship.com/labels/${response.data.courier.waybill_id}.pdf`
+                : response.data.courier?.link;
 
             if (!labelUrl) {
-                throw new BadRequestException('Shipping label not yet available. Please try again in a few moments.');
+                throw new BadRequestException('Shipping label not available for this order');
             }
 
-            this.logger.info('✅ Biteship: Shipping label retrieved');
+            this.logger.info('✅ Biteship: Shipping label URL retrieved');
+
             return labelUrl;
         } catch (error: any) {
             this.logger.error('❌ Biteship: Failed to get shipping label', {
@@ -228,18 +260,20 @@ export class BiteshipService {
                 throw new BadRequestException('Order not found in Biteship');
             }
 
-            if (error instanceof BadRequestException) {
-                throw error;
-            }
-
-            throw new BadRequestException('Failed to get shipping label. Please try again.');
+            throw new BadRequestException('Failed to retrieve shipping label. Please try again.');
         }
     }
 
+    /**
+     * Check if Biteship is properly configured
+     */
     isConfigured(): boolean {
         return !!this.apiKey && !!this.configService.get<string>('WAREHOUSE_POSTAL_CODE');
     }
 
+    /**
+     * Get available couriers list
+     */
     getAvailableCouriers(): string[] {
         return this.availableCouriers;
     }
