@@ -55,6 +55,14 @@ jobs:
             exit 1
           fi
 
+      - name: Verify build output
+        run: |
+          if [ ! -f "dist/main.js" ]; then
+            echo "❌ Build failed: dist/main.js not found"
+            exit 1
+          fi
+          echo "✅ Build successful: dist/main.js exists"
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
@@ -82,6 +90,22 @@ jobs:
           command_timeout: 60m
           script: |
             cd /var/www/kenbike/backend
+            echo "🔄 Pulling latest image..."
             docker compose pull
+            
+            echo "🛑 Stopping containers..."
             docker compose down
+            
+            echo "🚀 Starting containers..."
             docker compose up -d
+            
+            echo "⏳ Waiting for backend to be healthy..."
+            sleep 15
+            
+            echo "📋 Checking container status..."
+            docker ps
+            
+            echo "📝 Checking backend logs..."
+            docker logs kenbike-backend --tail 30
+            
+            echo "✅ Deployment complete!"
