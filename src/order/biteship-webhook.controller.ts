@@ -32,12 +32,14 @@ export class BiteshipWebhookController {
     async handleWebhook(
         @Body() payload: any,
         @Headers('x-biteship-signature') signature?: string,
+        @Res() res: Response,
     ) {
         try {
-            // ✅ Handle Biteship connection test (empty payload)
+            // ✅ Handle Biteship ping / test (body kosong)
             if (!payload || Object.keys(payload).length === 0) {
                 this.logger.info('📨 Biteship webhook test/ping received');
-                return 'OK';
+                res.type('text/plain').send('OK');
+                return;
             }
 
             this.logger.info('📨 Biteship webhook received', {
@@ -46,32 +48,17 @@ export class BiteshipWebhookController {
                 signature: signature ? 'present' : 'missing',
             });
 
-            // Validate required fields
-            if (!payload?.order_id || !payload?.status) {
-                this.logger.warn('⚠️ Invalid webhook payload', { payload });
-                // ✅ Still return OK to prevent Biteship retries
-                return 'OK';
-            }
-
-            // Process the webhook
+            // ✅ Masih lanjut proses normal
             await this.biteshipWebhookService.processWebhook(payload);
 
-            this.logger.info('✅ Webhook processed successfully', {
-                orderId: payload.order_id,
-                status: payload.status,
-            });
-
-            // ✅ Return plain text "OK"
-            return 'OK';
+            res.type('text/plain').send('OK');
         } catch (error: any) {
             this.logger.error('❌ Webhook processing failed', {
                 error: error.message,
                 payload,
             });
-
-            // ✅ Return OK even on error to prevent Biteship retries
-            // Log error for manual investigation
-            return 'OK';
+            // ✅ Tetap kirim “OK” agar Biteship tidak retry
+            res.type('text/plain').send('OK');
         }
     }
 }
