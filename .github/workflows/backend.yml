@@ -17,10 +17,43 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Build NestJS application
+        run: |
+          echo "Starting build process..."
+          npm run build
+          echo "Build completed"
+
+      - name: Verify build output
+        run: |
+          echo "=== Checking dist folder ==="
+          if [ -d "dist" ]; then
+            echo "✅ dist folder exists"
+            echo "Contents of dist folder:"
+            ls -la dist/
+            echo "---"
+            find dist -type f -name "*.js" | head -10
+          else
+            echo "❌ dist folder not found!"
+            echo "Current directory contents:"
+            ls -la
+            exit 1
+          fi
+          
+          echo "=== Checking main.js ==="
+          if [ -f "dist/main.js" ]; then
+            echo "✅ dist/main.js found"
+            echo "File size: $(stat -c%s dist/main.js) bytes"
+          else
+            echo "❌ dist/main.js not found"
+            echo "Looking for main.js in other locations:"
+            find . -name "main.js" -type f 2>/dev/null | head -5
+            exit 1
+          fi
 
       - name: Verify build output
         run: |
