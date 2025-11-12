@@ -1,4 +1,4 @@
-// ✅ NEW BITESHIP WEBHOOK CONTROLLER - Save this as: src/order/biteship-webhook.controller.ts
+// src/order/biteship-webhook.controller.ts
 
 import {
     Controller,
@@ -22,19 +22,10 @@ export class BiteshipWebhookController {
     ) {}
 
     /**
-     * POST /webhooks/biteship
+     * POST /api/v1/webhooks/biteship
      * Handle Biteship webhook events
      *
-     * Biteship webhook payload example:
-     * {
-     *   "order_id": "biteship_order_id_here",
-     *   "status": "delivered",
-     *   "courier": {
-     *     "tracking_id": "JNE123456789",
-     *     "name": "JNE"
-     *   },
-     *   "updated_at": "2024-01-15T10:00:00Z"
-     * }
+     * ✅ FIXED: Return plain text "OK" for Biteship validation
      */
     @Post()
     @HttpCode(HttpStatus.OK)
@@ -43,51 +34,44 @@ export class BiteshipWebhookController {
         @Headers('x-biteship-signature') signature?: string,
     ) {
         try {
+            // ✅ Handle Biteship connection test (empty payload)
+            if (!payload || Object.keys(payload).length === 0) {
+                this.logger.info('📨 Biteship webhook test/ping received');
+                return 'OK';
+            }
+
             this.logger.info('📨 Biteship webhook received', {
                 orderId: payload?.order_id,
                 status: payload?.status,
                 signature: signature ? 'present' : 'missing',
             });
 
-            // Validate webhook signature (if configured)
-            // Note: Biteship may send signature in headers for security
-            // Uncomment this when you have webhook secret configured
-            // if (signature) {
-            //     const isValid = await this.biteshipWebhookService.verifySignature(
-            //         payload,
-            //         signature,
-            //     );
-            //     if (!isValid) {
-            //         this.logger.warn('⚠️ Invalid webhook signature');
-            //         throw new BadRequestException('Invalid signature');
-            //     }
-            // }
-
             // Validate required fields
             if (!payload?.order_id || !payload?.status) {
                 this.logger.warn('⚠️ Invalid webhook payload', { payload });
-                throw new BadRequestException('Missing required fields: order_id or status');
+                // ✅ Still return OK to prevent Biteship retries
+                return 'OK';
             }
 
             // Process the webhook
             await this.biteshipWebhookService.processWebhook(payload);
 
-            return {
-                success: true,
-                message: 'Webhook processed successfully',
-            };
+            this.logger.info('✅ Webhook processed successfully', {
+                orderId: payload.order_id,
+                status: payload.status,
+            });
+
+            // ✅ Return plain text "OK"
+            return 'OK';
         } catch (error: any) {
             this.logger.error('❌ Webhook processing failed', {
                 error: error.message,
                 payload,
             });
 
-            // Return 200 even on error to prevent Biteship from retrying
-            // But log the error for investigation
-            return {
-                success: false,
-                message: error.message,
-            };
+            // ✅ Return OK even on error to prevent Biteship retries
+            // Log error for manual investigation
+            return 'OK';
         }
     }
 }
