@@ -89,6 +89,7 @@ async function bootstrap() {
     }
     next();
   });
+  app.use(bodyParser.json({ strict: false }));
 
   app.setGlobalPrefix('api/v1');
   await app.listen(3000);
