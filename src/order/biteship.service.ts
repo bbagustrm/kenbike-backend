@@ -1,4 +1,4 @@
-// ✅ UPDATED BITESHIP SERVICE - Save this as: src/order/biteship.service.ts
+// src/order/biteship.service.ts
 
 import { Injectable, Inject, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
