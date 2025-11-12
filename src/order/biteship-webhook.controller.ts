@@ -8,6 +8,7 @@ import {
     HttpCode,
     HttpStatus,
     Inject,
+    Res,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { Logger } from 'winston';
