@@ -156,4 +156,18 @@ export class OrderController {
         // Then get shipping label
         return this.orderService.getShippingLabel(orderNumber);
     }
+
+    /**
+     * ✅ NEW: POST /admin/orders/cron/auto-complete
+     * Manual trigger for auto-complete cron job
+     */
+    @Post('cron/auto-complete')
+    async manualAutoComplete() {
+        const result = await this.orderService.autoCompleteDeliveredOrders();
+
+        return {
+            message: 'Auto-complete triggered successfully',
+            data: result,
+        };
+    }
 }
