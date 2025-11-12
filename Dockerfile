@@ -2,27 +2,62 @@
 FROM node:20-alpine AS builder
 WORKDIR /usr/src/app
 
+# Copy package files
 COPY package*.json ./
-RUN npm install
-COPY . .
+COPY tsconfig*.json ./
+COPY nest-cli.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy prisma schema first
+COPY prisma ./prisma
+
+# Generate Prisma Client
 RUN npx prisma generate
+
+# Copy source code
+COPY src ./src
+
+# Build the application
 RUN npm run build
+
+# Verify that main.js exists
+RUN echo "=== Verifying build output ===" && \
+    ls -la dist/ && \
+    if [ ! -f "dist/main.js" ]; then \
+      echo "ERROR: dist/main.js not found after build!"; \
+      echo "Contents of dist directory:"; \
+      find dist -type f -name "*.js" | head -10; \
+      exit 1; \
+    fi && \
+    echo "✅ Build verification passed"
 
 # ---- STAGE 2: Run ----
 FROM node:20-alpine
 WORKDIR /usr/src/app
 
-# Copy package files dan install production dependencies
-COPY package*.json ./
-RUN npm install --production
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
 
-# Copy prisma schema dan generate client di runtime stage
+# Copy package files
+COPY package*.json ./
+
+# Install production dependencies only
+RUN npm ci --only=production
+
+# Copy prisma schema and generate client
 COPY prisma ./prisma
 RUN npx prisma generate
 
-# Copy built files
+# Copy built application from builder stage
 COPY --from=builder /usr/src/app/dist ./dist
+
+# Create uploads directory
+RUN mkdir -p /app/uploads
 
 EXPOSE 3000
 
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
