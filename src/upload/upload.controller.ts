@@ -17,8 +17,10 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
+import * as sharp from 'sharp';
+import { join } from 'path';
+import { promises as fs } from 'fs';
 
-// ✅ Add type for allowed folders
 type UploadFolder = 'profiles' | 'products' | 'variants' | 'gallery' | 'reviews';
 
 @Controller('upload')
@@ -26,79 +28,127 @@ type UploadFolder = 'profiles' | 'products' | 'variants' | 'gallery' | 'reviews'
 export class UploadController {
     constructor(private readonly localStorageService: LocalStorageService) {}
 
+    // ✅ Helper: Convert image ke WebP untuk hemat size
+    private async convertToWebP(
+        file: Express.Multer.File,
+        outputPath: string,
+        quality = 80
+    ): Promise<void> {
+        await sharp(file.buffer)
+            .webp({ quality, effort: 6 }) // effort 6 = balance speed & compression
+            .toFile(outputPath);
+    }
+
     /**
-     * POST /upload/image
-     * Upload single image
+     * POST /upload/image - Upload dengan auto WebP conversion
      */
     @Post('image')
     @Roles(Role.ADMIN, Role.OWNER)
     @HttpCode(HttpStatus.OK)
     @UseInterceptors(
         FileInterceptor('file', {
-            limits: { fileSize: 5 * 1024 * 1024 }, // ✅ 5MB for gallery images
+            limits: { fileSize: 5 * 1024 * 1024 },
             fileFilter: FileUploadUtil.imageFileFilter,
         }),
     )
     async uploadImage(
         @UploadedFile() file: Express.Multer.File,
-        @Body('folder') folder: UploadFolder, // ✅ Use type
+        @Body('folder') folder: UploadFolder,
+        @Body('convertWebP') convertWebP?: string, // "true" untuk convert
     ) {
         if (!file) {
             throw new BadRequestException('File is required');
         }
-
         if (!folder) {
             throw new BadRequestException('Folder parameter is required');
         }
 
-        // Validate file
         FileUploadUtil.validateImageFile(file);
 
-        // Upload file
-        const result = await this.localStorageService.uploadImage(file, folder);
+        // ✅ Convert ke WebP jika diminta (default: true untuk products/gallery)
+        const shouldConvert = convertWebP === 'true' ||
+            ['products', 'gallery', 'variants'].includes(folder);
+
+        let result;
+
+        if (shouldConvert) {
+            // Simpan dengan format WebP
+            const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+            const uploadDir = join(process.cwd(), 'uploads', folder);
+            const outputPath = join(uploadDir, webpFilename);
+
+            // Pastikan folder exists
+            await fs.mkdir(uploadDir, { recursive: true });
+
+            // Convert & save
+            await this.convertToWebP(file, outputPath);
+
+            result = {
+                url: `/uploads/${folder}/${webpFilename}`,
+                path: outputPath,
+            };
+        } else {
+            // Upload normal
+            result = await this.localStorageService.uploadImage(file, folder);
+        }
 
         return {
             message: 'Image uploaded successfully',
             data: {
                 url: result.url,
                 path: result.path,
+                optimized: shouldConvert,
             },
         };
     }
 
     /**
-     * POST /upload/images
-     * Upload multiple images (max 20 for gallery)
+     * POST /upload/images - Batch upload dengan WebP
      */
     @Post('images')
     @Roles(Role.ADMIN, Role.OWNER)
     @HttpCode(HttpStatus.OK)
     @UseInterceptors(
-        FilesInterceptor('files', 20, { // ✅ Increase to 20 for gallery
-            limits: { fileSize: 5 * 1024 * 1024 }, // ✅ 5MB per file
+        FilesInterceptor('files', 20, {
+            limits: { fileSize: 5 * 1024 * 1024 },
             fileFilter: FileUploadUtil.imageFileFilter,
         }),
     )
     async uploadImages(
         @UploadedFiles() files: Express.Multer.File[],
-        @Body('folder') folder: UploadFolder, // ✅ Use type
+        @Body('folder') folder: UploadFolder,
+        @Body('convertWebP') convertWebP?: string,
     ) {
         if (!files || files.length === 0) {
             throw new BadRequestException('At least one file is required');
         }
-
         if (!folder) {
             throw new BadRequestException('Folder parameter is required');
         }
 
-        // Validate files based on folder
         const maxFiles = folder === 'gallery' ? 20 : 10;
         FileUploadUtil.validateMultipleFiles(files, maxFiles);
 
-        // Upload all files
-        const uploadPromises = files.map((file) =>
-            this.localStorageService.uploadImage(file, folder),
-        );
+        const shouldConvert = convertWebP === 'true' ||
+            ['products', 'gallery', 'variants'].includes(folder);
+
+        const uploadPromises = files.map(async (file) => {
+            if (shouldConvert) {
+                const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+                const uploadDir = join(process.cwd(), 'uploads', folder);
+                const outputPath = join(uploadDir, webpFilename);
+
+                await fs.mkdir(uploadDir, { recursive: true });
+                await this.convertToWebP(file, outputPath);
+
+                return {
+                    url: `/uploads/${folder}/${webpFilename}`,
+                    path: outputPath,
+                };
+            } else {
+                return this.localStorageService.uploadImage(file, folder);
+            }
+        });
 
         const results = await Promise.all(uploadPromises);
 
@@ -107,13 +157,13 @@ export class UploadController {
             data: {
                 urls: results.map((r) => r.url),
                 count: results.length,
+                optimized: shouldConvert,
             },
         };
     }
 
     /**
      * POST /upload/profile
-     * Upload profile image (shorthand for profiles folder)
      */
     @Post('profile')
     @HttpCode(HttpStatus.OK)
@@ -127,23 +177,26 @@ export class UploadController {
         if (!file) {
             throw new BadRequestException('File is required');
         }
-
         FileUploadUtil.validateImageFile(file);
-        const result = await this.localStorageService.uploadImage(file, 'profiles');
+
+        // Profile images biasanya kecil, convert ke WebP
+        const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+        const uploadDir = join(process.cwd(), 'uploads', 'profiles');
+        const outputPath = join(uploadDir, webpFilename);
+
+        await fs.mkdir(uploadDir, { recursive: true });
+        await this.convertToWebP(file, outputPath, 85); // Kualitas lebih tinggi untuk profile
 
         return {
             message: 'Profile image uploaded successfully',
             data: {
-                url: result.url,
-                path: result.path,
+                url: `/uploads/profiles/${webpFilename}`,
+                path: outputPath,
+                optimized: true,
             },
         };
     }
 
-    /**
-     * POST /upload/product
-     * Upload product image (shorthand for products folder)
-     */
     @Post('product')
     @Roles(Role.ADMIN, Role.OWNER)
     @HttpCode(HttpStatus.OK)
@@ -157,23 +210,25 @@ export class UploadController {
         if (!file) {
             throw new BadRequestException('File is required');
         }
-
         FileUploadUtil.validateImageFile(file);
-        const result = await this.localStorageService.uploadImage(file, 'products');
+
+        const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+        const uploadDir = join(process.cwd(), 'uploads', 'products');
+        const outputPath = join(uploadDir, webpFilename);
+
+        await fs.mkdir(uploadDir, { recursive: true });
+        await this.convertToWebP(file, outputPath);
 
         return {
             message: 'Product image uploaded successfully',
             data: {
-                url: result.url,
-                path: result.path,
+                url: `/uploads/products/${webpFilename}`,
+                path: outputPath,
+                optimized: true,
             },
         };
     }
 
-    /**
-     * POST /upload/variants
-     * Upload variant images (shorthand for variants folder)
-     */
     @Post('variants')
     @Roles(Role.ADMIN, Role.OWNER)
     @HttpCode(HttpStatus.OK)
@@ -187,12 +242,21 @@ export class UploadController {
         if (!files || files.length === 0) {
             throw new BadRequestException('At least one file is required');
         }
-
         FileUploadUtil.validateMultipleFiles(files, 5);
 
-        const uploadPromises = files.map((file) =>
-            this.localStorageService.uploadImage(file, 'variants'),
-        );
+        const uploadPromises = files.map(async (file) => {
+            const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+            const uploadDir = join(process.cwd(), 'uploads', 'variants');
+            const outputPath = join(uploadDir, webpFilename);
+
+            await fs.mkdir(uploadDir, { recursive: true });
+            await this.convertToWebP(file, outputPath);
+
+            return {
+                url: `/uploads/variants/${webpFilename}`,
+                path: outputPath,
+            };
+        });
 
         const results = await Promise.all(uploadPromises);
 
@@ -201,21 +265,17 @@ export class UploadController {
             data: {
                 urls: results.map((r) => r.url),
                 count: results.length,
+                optimized: true,
             },
         };
     }
 
-    // ✅ NEW: Shorthand for gallery uploads
-    /**
-     * POST /upload/gallery
-     * Upload gallery images (shorthand for gallery folder)
-     */
     @Post('gallery')
     @Roles(Role.ADMIN, Role.OWNER)
     @HttpCode(HttpStatus.OK)
     @UseInterceptors(
         FilesInterceptor('files', 20, {
-            limits: { fileSize: 5 * 1024 * 1024 }, // 5MB per file
+            limits: { fileSize: 5 * 1024 * 1024 },
             fileFilter: FileUploadUtil.imageFileFilter,
         }),
     )
@@ -223,12 +283,21 @@ export class UploadController {
         if (!files || files.length === 0) {
             throw new BadRequestException('At least one file is required');
         }
-
         FileUploadUtil.validateMultipleFiles(files, 20);
 
-        const uploadPromises = files.map((file) =>
-            this.localStorageService.uploadImage(file, 'gallery'),
-        );
+        const uploadPromises = files.map(async (file) => {
+            const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+            const uploadDir = join(process.cwd(), 'uploads', 'gallery');
+            const outputPath = join(uploadDir, webpFilename);
+
+            await fs.mkdir(uploadDir, { recursive: true });
+            await this.convertToWebP(file, outputPath);
+
+            return {
+                url: `/uploads/gallery/${webpFilename}`,
+                path: outputPath,
+            };
+        });
 
         const results = await Promise.all(uploadPromises);
 
@@ -237,6 +306,7 @@ export class UploadController {
             data: {
                 urls: results.map((r) => r.url),
                 count: results.length,
+                optimized: true,
             },
         };
     }
