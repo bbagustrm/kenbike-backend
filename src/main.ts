@@ -5,7 +5,9 @@ import helmet from 'helmet';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import * as cookieParser from 'cookie-parser';
-import * as compression from 'compression'; // ✅ Install: npm i compression @types/compression
+import * as compression from 'compression';
+import * as bodyParser from 'body-parser';
+
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
