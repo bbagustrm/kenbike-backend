@@ -13,6 +13,7 @@ import { StorageModule } from './common/storage/storage.module';
 import { UploadModule } from './upload/upload.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CartModule } from './cart/cart.module';
+import { OrderModule } from './order/order.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { CartModule } from './cart/cart.module';
     StorageModule,
     UploadModule,
     CartModule,
+    OrderModule,
   ],
   controllers: [AppController],
   providers: [
