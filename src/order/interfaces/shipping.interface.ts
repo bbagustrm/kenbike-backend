@@ -1,13 +1,11 @@
-/**
- * Biteship API Response Interfaces
- * Documentation: https://biteship.com/docs
- */
+// ============================================
+// BITESHIP TYPES
+// ============================================
 
 export interface BiteshipRatesRequest {
     origin_postal_code: string;
     destination_postal_code: string;
-    destination_area_id?: string; // Optional, for more accurate rates
-    couriers: string; // Comma-separated: "jne,tiki,sicepat"
+    couriers: string; // "jne,tiki,sicepat"
     items: Array<{
         name: string;
         value: number;
@@ -16,185 +14,153 @@ export interface BiteshipRatesRequest {
     }>;
 }
 
-export interface BiteshipRateOption {
-    available_for_cash_on_delivery: boolean;
-    available_for_proof_of_delivery: boolean;
-    available_for_instant_waybill_id: boolean;
-    available_for_insurance: boolean;
-    company: string; // "jne"
-    courier_name: string; // "JNE"
-    courier_code: string; // "jne"
-    courier_service_name: string; // "Reguler"
-    courier_service_code: string; // "reg"
-    description: string;
-    duration: string; // "2 - 3 hari"
-    shipment_duration_range: string; // "2 - 3"
-    shipment_duration_unit: string; // "days"
-    service_type: string;
-    shipping_type: string;
-    price: number;
-    type: string; // "reg"
-}
-
 export interface BiteshipRatesResponse {
     success: boolean;
-    message: string;
-    object: string; // "rates"
+    message?: string;
     origin: {
-        location_id: string;
-        postal_code: number;
+        postal_code: string;
         latitude: number;
         longitude: number;
     };
     destination: {
-        location_id: string;
-        postal_code: number;
+        postal_code: string;
         latitude: number;
         longitude: number;
     };
-    pricing: BiteshipRateOption[];
+    pricing: Array<{
+        available_collection_method: string[];
+        available_for_cash_on_delivery: boolean;
+        available_for_proof_of_delivery: boolean;
+        available_for_instant_waybill_id: boolean;
+        available_for_insurance: boolean;
+        company: string;
+        courier_name: string;
+        courier_code: string;
+        courier_service_name: string;
+        description: string;
+        duration: string;
+        shipment_duration_range: string; // "2 - 3"
+        shipment_duration_unit: string;
+        service_type: string;
+        shipping_type: string;
+        price: number;
+        type: string; // "reg", "yes", etc.
+    }>;
 }
 
+/**
+ * ✅ NEW: Biteship Create Order Request
+ */
 export interface BiteshipOrderRequest {
+    // Origin (warehouse/store)
     origin_contact_name: string;
     origin_contact_phone: string;
     origin_address: string;
+    origin_postal_code: string;
     origin_note?: string;
-    origin_postal_code: number;
+
+    // Destination (customer)
     destination_contact_name: string;
     destination_contact_phone: string;
+    destination_contact_email?: string;
     destination_address: string;
+    destination_postal_code: string;
     destination_note?: string;
-    destination_postal_code: number;
-    courier_company: string; // "jne"
-    courier_type: string; // "reg"
-    courier_insurance?: number; // Optional insurance value
-    delivery_type: string; // "now" or scheduled
-    delivery_date?: string; // ISO date for scheduled
-    delivery_time?: string; // Time for scheduled
+
+    // Courier selection
+    courier_company: string; // "jne", "tiki", etc.
+    courier_type: string; // "reg", "yes", etc.
+
+    // Delivery settings
+    delivery_type: 'now' | 'scheduled';
+    delivery_date?: string; // ISO date if scheduled
+    delivery_time?: string; // Time if scheduled
+
+    // Order details
     order_note?: string;
     items: Array<{
-        id?: string;
         name: string;
         description?: string;
         value: number;
         quantity: number;
-        height?: number; // cm
-        length?: number; // cm
-        weight: number; // grams
-        width?: number; // cm
+        weight: number; // in grams
+        height?: number; // in cm
+        length?: number; // in cm
+        width?: number; // in cm
     }>;
 }
 
+/**
+ * ✅ NEW: Biteship Create Order Response
+ */
 export interface BiteshipOrderResponse {
     success: boolean;
-    message: string;
-    object: string; // "order"
+    message?: string;
     id: string; // Biteship order ID
-    shipper: {
+    courier: {
+        tracking_id: string; // AWB/tracking number
+        waybill_id: string;
+        company: string;
         name: string;
-        email: string;
         phone: string;
+        type: string;
+        link?: string; // Tracking link
     };
     origin: {
         contact_name: string;
         contact_phone: string;
         address: string;
-        note: string;
-        postal_code: number;
+        postal_code: string;
     };
     destination: {
         contact_name: string;
         contact_phone: string;
+        contact_email?: string;
         address: string;
-        note: string;
-        postal_code: number;
-    };
-    courier: {
-        company: string;
-        type: string;
-        name: string;
-        phone: string;
-        tracking_id: string; // AWB/Tracking number
-        link: string; // Tracking URL
+        postal_code: string;
     };
     delivery: {
         type: string;
-        datetime: string;
-        note: string;
+        datetime?: string;
+        note?: string;
     };
-    reference_id?: string; // Our order number
-    items: Array<{
-        id: string;
-        name: string;
-        description: string;
-        value: number;
-        quantity: number;
-        weight: number;
-    }>;
     price: number;
     status: string;
 }
 
+/**
+ * ✅ NEW: Biteship Tracking Response
+ */
 export interface BiteshipTrackingResponse {
     success: boolean;
-    message: string;
-    object: string; // "tracking"
-    id: string;
-    status: string;
-    order_id: string;
-    waybill_id: string;
+    message?: string;
     courier: {
         company: string;
         name: string;
-        phone: string;
+        tracking_id: string;
+        waybill_id: string;
     };
-    origin: {
-        contact_name: string;
-        address: string;
-    };
-    destination: {
-        contact_name: string;
-        address: string;
-    };
+    status: string; // "confirmed", "picked", "in_transit", "delivered", etc.
     history: Array<{
-        note: string;
-        updated_at: string;
         status: string;
+        note: string;
+        updated_at: string; // ISO datetime
+        service_type?: string;
     }>;
-    link: string;
-    order_price: number;
-    note: string;
+    link: string; // Public tracking URL
+    order_id: string;
 }
 
-/**
- * International Shipping Zone Interface
- */
+// ============================================
+// INTERNATIONAL SHIPPING TYPES
+// ============================================
+
 export interface InternationalShippingZone {
     id: string;
     name: string;
-    countries: string[];
+    countries: string[]; // Array of country codes
     baseRate: number;
     perKgRate: number;
     minDays: number;
     maxDays: number;
-}
-
-/**
- * Shipping Calculation Result
- */
-export interface ShippingCalculation {
-    type: 'DOMESTIC' | 'INTERNATIONAL';
-    cost: number;
-    estimatedDays: {
-        min: number;
-        max: number;
-    };
-    serviceName: string;
-    // For domestic
-    courier?: string;
-    service?: string;
-    biteshipData?: BiteshipRateOption;
-    // For international
-    zone?: InternationalShippingZone;
 }

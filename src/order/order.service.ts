@@ -1,3 +1,5 @@
+// src/order/order.service.ts
+
 import {
     Injectable,
     Inject,
@@ -11,7 +13,6 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { BiteshipService } from './biteship.service';
 import { InternationalShippingService } from './international-shipping.service';
-import { BiteshipOrderRequest } from './interfaces/shipping.interface';
 import { PaginationUtil } from '../utils/pagination.util';
 import {
     CalculateShippingDto,
@@ -28,6 +29,7 @@ import {
     CancelOrderDto,
     UpdateOrderStatusDto,
 } from './dto/order-management.dto';
+import { BiteshipOrderRequest } from './interfaces/shipping.interface';
 
 @Injectable()
 export class OrderService {
@@ -45,6 +47,9 @@ export class OrderService {
         this.usdToIdrRate = parseFloat(this.configService.get<string>('USD_TO_IDR_RATE') || '15700');
     }
 
+    /**
+     * Calculate shipping costs for domestic or international
+     */
     async calculateShipping(
         userId: string,
         dto: CalculateShippingDto,
@@ -154,6 +159,9 @@ export class OrderService {
         };
     }
 
+    /**
+     * Parse shipping duration string (e.g., "2 - 3" -> {min: 2, max: 3})
+     */
     private parseDuration(duration: string): { min: number; max: number } {
         const parts = duration.split('-').map((s) => parseInt(s.trim()));
         return {
@@ -162,6 +170,9 @@ export class OrderService {
         };
     }
 
+    /**
+     * Generate unique order number (format: ORD-YYYYMMDD-XXXX)
+     */
     private async generateOrderNumber(): Promise<string> {
         const date = new Date();
         const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
@@ -182,6 +193,9 @@ export class OrderService {
         return `ORD-${dateStr}-${sequence}`;
     }
 
+    /**
+     * Calculate order totals (subtotal, discount, tax, shipping, total)
+     */
     private calculateOrderTotals(
         subtotal: number,
         discount: number,
@@ -206,6 +220,9 @@ export class OrderService {
         };
     }
 
+    /**
+     * Create order from user's cart
+     */
     async createOrder(userId: string, dto: CreateOrderDto): Promise<CreateOrderResponse> {
         this.logger.info('🛒 Creating order from cart', { userId });
 
@@ -235,6 +252,7 @@ export class OrderService {
             throw new BadRequestException('Cart is empty');
         }
 
+        // Validate all products and variants
         for (const item of cart.items) {
             if (!item.product.isActive || item.product.deletedAt) {
                 throw new BadRequestException(`Product ${item.product.name} is no longer available`);
@@ -254,6 +272,7 @@ export class OrderService {
             }
         }
 
+        // Calculate order items with pricing
         let subtotal = 0;
         let totalDiscount = 0;
         let totalWeight = 0;
@@ -291,6 +310,7 @@ export class OrderService {
             };
         });
 
+        // Calculate shipping cost
         let shippingCost = 0;
         let shippingData: any = {};
 
@@ -334,6 +354,7 @@ export class OrderService {
         const orderNumber = await this.generateOrderNumber();
         const exchangeRate = dto.currency === 'USD' ? this.usdToIdrRate : undefined;
 
+        // Create order in database transaction
         const order = await this.prisma.$transaction(async (tx) => {
             const newOrder = await tx.order.create({
                 data: {
@@ -368,6 +389,7 @@ export class OrderService {
                 })),
             });
 
+            // Decrease product variant stock
             for (const item of cart.items) {
                 await tx.productVariant.update({
                     where: { id: item.variantId },
@@ -379,6 +401,7 @@ export class OrderService {
                 });
             }
 
+            // Clear cart
             await tx.cartItem.deleteMany({
                 where: { cartId: cart.id },
             });
@@ -423,6 +446,9 @@ export class OrderService {
         };
     }
 
+    /**
+     * Get user's orders with pagination and filters
+     */
     async getUserOrders(userId: string, dto: GetOrdersDto) {
         const { page, limit, status, sort_by, order, search } = dto;
 
@@ -487,6 +513,9 @@ export class OrderService {
         };
     }
 
+    /**
+     * Get order detail for user
+     */
     async getOrderDetail(userId: string, orderNumber: string) {
         const order = await this.prisma.order.findUnique({
             where: { orderNumber },
@@ -560,6 +589,9 @@ export class OrderService {
         };
     }
 
+    /**
+     * Cancel order (user can only cancel PENDING or FAILED orders)
+     */
     async cancelOrder(userId: string, orderNumber: string, dto: CancelOrderDto) {
         const order = await this.prisma.order.findUnique({
             where: { orderNumber },
@@ -589,6 +621,7 @@ export class OrderService {
                 },
             });
 
+            // Restore stock
             for (const item of order.items) {
                 await tx.productVariant.update({
                     where: { id: item.variantId },
@@ -608,6 +641,9 @@ export class OrderService {
         };
     }
 
+    /**
+     * Get all orders (Admin)
+     */
     async getAllOrders(dto: GetAllOrdersDto) {
         const {
             page,
@@ -711,6 +747,9 @@ export class OrderService {
         };
     }
 
+    /**
+     * Get order detail (Admin)
+     */
     async getOrderDetailAdmin(orderNumber: string) {
         const order = await this.prisma.order.findUnique({
             where: { orderNumber },
@@ -799,12 +838,21 @@ export class OrderService {
     }
 
     /**
-     * 🔥 PHASE 2.5: Update order status with Biteship integration
+     * ✅ UPDATED: Update order status with Biteship integration
      */
     async updateOrderStatus(orderNumber: string, dto: UpdateOrderStatusDto) {
         const order = await this.prisma.order.findUnique({
             where: { orderNumber },
-            include: { items: true },
+            include: {
+                items: true,
+                user: {
+                    select: {
+                        email: true,
+                        firstName: true,
+                        lastName: true,
+                    },
+                },
+            },
         });
 
         if (!order) {
@@ -832,68 +880,75 @@ export class OrderService {
             status: dto.status,
         };
 
-        // ✅ PHASE 2.5: Create order in Biteship when SHIPPED
+        // ✅ PHASE 2.5: Create Biteship order when shipping
         if (dto.status === 'SHIPPED') {
             updateData.shippedAt = new Date();
 
-            // For DOMESTIC shipping, create order in Biteship
+            // Create order in Biteship for DOMESTIC orders
             if (order.shippingType === 'DOMESTIC' && order.biteshipCourier && order.biteshipService) {
                 try {
-                    this.logger.info('🚀 Creating order in Biteship', { orderNumber });
+                    this.logger.info('📦 Creating Biteship order', {
+                        orderNumber: order.orderNumber,
+                        courier: order.biteshipCourier,
+                        service: order.biteshipService,
+                    });
+
+                    // Prepare items for Biteship
+                    const biteshipItems = order.items.map((item) => ({
+                        name: item.productName,
+                        description: item.variantName,
+                        value: item.pricePerItem,
+                        quantity: item.quantity,
+                        weight: 1000, // Default 1kg per item (adjust as needed)
+                    }));
 
                     // Prepare Biteship order request
-                    const biteshipOrderData: BiteshipOrderRequest = {
+                    const biteshipOrderRequest: BiteshipOrderRequest = {
+                        origin_contact_name: this.configService.get<string>('WAREHOUSE_NAME') || 'Kenbike Store',
+                        origin_contact_phone: this.configService.get<string>('WAREHOUSE_PHONE') || '081234567890',
+                        origin_address: this.configService.get<string>('WAREHOUSE_ADDRESS') || '',
                         origin_postal_code: this.configService.get<string>('WAREHOUSE_POSTAL_CODE') || '',
+                        destination_contact_name: order.recipientName,
+                        destination_contact_phone: order.recipientPhone,
+                        destination_contact_email: order.user.email,
+                        destination_address: order.shippingAddress,
                         destination_postal_code: order.shippingPostalCode,
+                        destination_note: order.shippingNotes || '',
                         courier_company: order.biteshipCourier,
                         courier_type: order.biteshipService,
                         delivery_type: 'now',
-                        order_note: order.shippingNotes || '',
-                        items: order.items.map(item => ({
-                            name: item.productName,
-                            value: item.subtotal,
-                            weight: 1000, // Default weight, adjust as needed
-                            quantity: item.quantity,
-                        })),
-                        shipper_contact_name: this.configService.get<string>('WAREHOUSE_NAME') || 'Kenbike Store',
-                        shipper_contact_phone: this.configService.get<string>('WAREHOUSE_PHONE') || '',
-                        shipper_contact_email: this.configService.get<string>('MAIL_FROM') || '',
-                        shipper_organization: this.configService.get<string>('WAREHOUSE_NAME') || 'Kenbike Store',
-                        origin_contact_name: this.configService.get<string>('WAREHOUSE_NAME') || 'Kenbike Store',
-                        origin_contact_phone: this.configService.get<string>('WAREHOUSE_PHONE') || '',
-                        origin_address: this.configService.get<string>('WAREHOUSE_ADDRESS') || '',
-                        destination_contact_name: order.recipientName,
-                        destination_contact_phone: order.recipientPhone,
-                        destination_contact_email: '', // Optional
-                        destination_address: order.shippingAddress,
-                        destination_note: order.shippingNotes || '',
+                        order_note: `Order ${order.orderNumber}`,
+                        items: biteshipItems,
                     };
 
                     // Create order in Biteship
-                    const biteshipResponse = await this.biteshipService.createOrder(biteshipOrderData);
+                    const biteshipResponse = await this.biteshipService.createOrder(biteshipOrderRequest);
 
-                    // Save Biteship response to database
+                    // Update order with Biteship data
                     updateData.biteshipOrderId = biteshipResponse.id;
-                    updateData.trackingNumber = biteshipResponse.courier.tracking_id || biteshipResponse.courier.waybill_id;
+                    updateData.trackingNumber = biteshipResponse.courier.tracking_id;
 
-                    this.logger.info('✅ Biteship order created successfully', {
-                        orderNumber,
+                    this.logger.info('✅ Biteship order created', {
+                        orderNumber: order.orderNumber,
                         biteshipOrderId: biteshipResponse.id,
-                        trackingNumber: updateData.trackingNumber,
+                        trackingNumber: biteshipResponse.courier.tracking_id,
                     });
                 } catch (error: any) {
                     this.logger.error('❌ Failed to create Biteship order', {
-                        orderNumber,
+                        orderNumber: order.orderNumber,
                         error: error.message,
                     });
+
                     throw new BadRequestException(
-                        `Failed to create shipping order in Biteship: ${error.message}`,
+                        `Failed to create shipping order: ${error.message}. Please try again or contact support.`,
                     );
                 }
-            } else {
-                // For INTERNATIONAL or manual tracking
+            } else if (order.shippingType === 'INTERNATIONAL') {
+                // For international orders, admin must input tracking manually
                 if (!dto.tracking_number) {
-                    throw new BadRequestException('Tracking number is required for international shipments');
+                    throw new BadRequestException(
+                        'Tracking number is required for international shipments',
+                    );
                 }
                 updateData.trackingNumber = dto.tracking_number;
             }
@@ -904,6 +959,7 @@ export class OrderService {
         } else if (dto.status === 'CANCELLED') {
             updateData.canceledAt = new Date();
 
+            // Restore stock if order was paid or processing
             if (['PAID', 'PROCESSING'].includes(order.status)) {
                 await this.prisma.$transaction(async (tx) => {
                     for (const item of order.items) {
@@ -944,7 +1000,7 @@ export class OrderService {
     }
 
     /**
-     * 🔥 PHASE 2.5: Get tracking info with full history from Biteship
+     * ✅ ENHANCED: Get tracking info with complete history
      */
     async getTrackingInfo(userId: string, orderNumber: string) {
         const order = await this.prisma.order.findUnique({
@@ -963,7 +1019,7 @@ export class OrderService {
             throw new BadRequestException('Order has not been shipped yet');
         }
 
-        // For DOMESTIC shipping with Biteship
+        // For domestic orders with Biteship integration
         if (order.shippingType === 'DOMESTIC' && order.biteshipOrderId) {
             try {
                 const tracking = await this.biteshipService.trackShipment(order.biteshipOrderId);
@@ -985,11 +1041,10 @@ export class OrderService {
                 };
             } catch (error) {
                 this.logger.error('Failed to get Biteship tracking', { error });
-                // Fallback to basic tracking
             }
         }
 
-        // For INTERNATIONAL or if Biteship fails
+        // Fallback for international or if Biteship fails
         return {
             data: {
                 order_number: order.orderNumber,
@@ -1003,9 +1058,9 @@ export class OrderService {
     }
 
     /**
-     * 🆕 PHASE 2.5: Get shipping label URL (User)
+     * ✅ NEW: Get shipping label for order (Universal - works for both user and admin)
      */
-    async getShippingLabel(userId: string, orderNumber: string) {
+    async getShippingLabel(orderNumber: string) {
         const order = await this.prisma.order.findUnique({
             where: { orderNumber },
         });
@@ -1014,16 +1069,12 @@ export class OrderService {
             throw new NotFoundException('Order not found');
         }
 
-        if (order.userId !== userId) {
-            throw new ForbiddenException('Access denied');
+        if (order.status !== 'SHIPPED' && order.status !== 'DELIVERED') {
+            throw new BadRequestException('Order must be shipped to get shipping label');
         }
 
-        if (order.status !== 'SHIPPED' && order.status !== 'DELIVERED' && order.status !== 'COMPLETED') {
-            throw new BadRequestException('Order has not been shipped yet');
-        }
-
-        if (order.shippingType !== 'DOMESTIC' || !order.biteshipOrderId) {
-            throw new BadRequestException('Shipping label is only available for domestic orders');
+        if (!order.biteshipOrderId) {
+            throw new BadRequestException('No Biteship order found for this shipment');
         }
 
         try {
@@ -1037,44 +1088,134 @@ export class OrderService {
                 },
             };
         } catch (error: any) {
-            this.logger.error('Failed to get shipping label', { orderNumber, error: error.message });
-            throw error;
+            this.logger.error('Failed to get shipping label', { error });
+            throw new BadRequestException('Failed to retrieve shipping label');
         }
     }
 
     /**
-     * 🆕 PHASE 2.5: Get shipping label URL (Admin)
+     * ✅ NEW: Get shipping label for order (Admin version - alias for compatibility)
      */
     async getShippingLabelAdmin(orderNumber: string) {
+        // Just call the universal method
+        return this.getShippingLabel(orderNumber);
+    }
+
+    /**
+     * ✅ NEW: Process Biteship webhook (called by webhook service)
+     */
+    async processBiteshipWebhook(biteshipOrderId: string, status: string, data: any) {
+        this.logger.info('📦 Processing Biteship webhook', {
+            biteshipOrderId,
+            status,
+        });
+
         const order = await this.prisma.order.findUnique({
-            where: { orderNumber },
+            where: { biteshipOrderId },
         });
 
         if (!order) {
-            throw new NotFoundException('Order not found');
+            this.logger.warn('⚠️ Biteship webhook: Order not found', { biteshipOrderId });
+            return;
         }
 
-        if (order.status !== 'SHIPPED' && order.status !== 'DELIVERED' && order.status !== 'COMPLETED') {
-            throw new BadRequestException('Order has not been shipped yet');
+        // Map Biteship status to our order status
+        const statusMap: Record<string, string> = {
+            'confirmed': 'SHIPPED',
+            'allocated': 'SHIPPED',
+            'picking_up': 'SHIPPED',
+            'picked': 'SHIPPED',
+            'dropping_off': 'SHIPPED',
+            'delivered': 'DELIVERED',
+            'cancelled': 'CANCELLED',
+            'rejected': 'CANCELLED',
+            'courier_not_found': 'CANCELLED',
+            'returned': 'CANCELLED',
+        };
+
+        const newStatus = statusMap[status.toLowerCase()];
+
+        if (!newStatus) {
+            this.logger.warn('⚠️ Unknown Biteship status', { status });
+            return;
         }
 
-        if (order.shippingType !== 'DOMESTIC' || !order.biteshipOrderId) {
-            throw new BadRequestException('Shipping label is only available for domestic orders');
+        // Only update if status is different and valid transition
+        if (order.status !== newStatus) {
+            const updateData: any = { status: newStatus };
+
+            if (newStatus === 'DELIVERED') {
+                updateData.deliveredAt = new Date();
+            } else if (newStatus === 'CANCELLED') {
+                updateData.canceledAt = new Date();
+            }
+
+            await this.prisma.order.update({
+                where: { id: order.id },
+                data: updateData,
+            });
+
+            this.logger.info('✅ Order status updated from webhook', {
+                orderNumber: order.orderNumber,
+                from: order.status,
+                to: newStatus,
+            });
+
+            // TODO Phase 3: Send email notification to customer
         }
+    }
 
-        try {
-            const labelUrl = await this.biteshipService.getShippingLabel(order.biteshipOrderId);
+    /**
+     * ✅ NEW: Auto-complete delivered orders (called by cron)
+     */
+    async autoCompleteDeliveredOrders() {
+        const autoCompleteDays = parseInt(
+            this.configService.get<string>('ORDER_AUTO_COMPLETE_DAYS') || '3'
+        );
 
-            return {
-                data: {
-                    order_number: order.orderNumber,
-                    tracking_number: order.trackingNumber,
-                    label_url: labelUrl,
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - autoCompleteDays);
+
+        this.logger.info('⏰ Starting auto-complete for delivered orders', {
+            cutoffDate,
+            days: autoCompleteDays,
+        });
+
+        const orders = await this.prisma.order.findMany({
+            where: {
+                status: 'DELIVERED',
+                deliveredAt: {
+                    lte: cutoffDate,
                 },
-            };
-        } catch (error: any) {
-            this.logger.error('Failed to get shipping label', { orderNumber, error: error.message });
-            throw error;
+            },
+        });
+
+        if (orders.length === 0) {
+            this.logger.info('✅ No orders to auto-complete');
+            return { completed: 0 };
         }
+
+        const orderIds = orders.map((o) => o.id);
+
+        await this.prisma.order.updateMany({
+            where: {
+                id: { in: orderIds },
+            },
+            data: {
+                status: 'COMPLETED',
+                completedAt: new Date(),
+            },
+        });
+
+        this.logger.info(`✅ Auto-completed ${orders.length} orders`, {
+            orderNumbers: orders.map((o) => o.orderNumber),
+        });
+
+        // TODO Phase 3: Send completion emails to customers
+
+        return {
+            completed: orders.length,
+            orders: orders.map((o) => o.orderNumber),
+        };
     }
 }
