@@ -1,3 +1,5 @@
+// src/order/dto/order-management.dto.ts
+
 import { z } from 'zod';
 
 /**
@@ -47,23 +49,12 @@ export type CancelOrderDto = z.infer<typeof CancelOrderSchema>;
 
 /**
  * DTO for updating order status (Admin)
+ * tracking_number is now optional - auto-generated for DOMESTIC, manual for INTERNATIONAL
  */
 export const UpdateOrderStatusSchema = z.object({
     status: z.enum(['PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED']),
-    tracking_number: z.string().optional(), // Required when status = SHIPPED
+    tracking_number: z.string().optional(), // Optional - auto for domestic, manual for international
     notes: z.string().max(500).optional(),
-}).refine(
-    (data) => {
-        // If status is SHIPPED, tracking number is required
-        if (data.status === 'SHIPPED') {
-            return !!data.tracking_number;
-        }
-        return true;
-    },
-    {
-        message: 'Tracking number is required when status is SHIPPED',
-        path: ['tracking_number'],
-    }
-);
+});
 
 export type UpdateOrderStatusDto = z.infer<typeof UpdateOrderStatusSchema>;

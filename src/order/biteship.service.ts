@@ -224,29 +224,57 @@ export class BiteshipService {
     }
 
     /**
-     * ✅ NEW: Get shipping label URL
+     * Get shipping label URL
+     * Fixed: Better error handling and correct URL format
      */
     async getShippingLabel(biteshipOrderId: string): Promise<string> {
         try {
             this.logger.info('📄 Biteship: Getting shipping label', { orderId: biteshipOrderId });
 
-            const response = await this.client.get<BiteshipOrderResponse>(
+            // Get order detail first
+            const response = await this.client.get<any>(
                 `/orders/${biteshipOrderId}`,
             );
 
             if (!response.data.success) {
-                throw new BadRequestException(response.data.message || 'Failed to get shipping label');
+                throw new BadRequestException(
+                    response.data.message || 'Failed to get order details'
+                );
             }
 
-            const labelUrl = response.data.courier?.waybill_id
-                ? `https://biteship.com/labels/${response.data.courier.waybill_id}.pdf`
-                : response.data.courier?.link;
+            const orderData = response.data;
+
+            // Try multiple sources for label URL
+            let labelUrl: string | null = null;
+
+            // 1. Check courier.link (most reliable)
+            if (orderData.courier?.link) {
+                labelUrl = orderData.courier.link;
+            }
+
+            // 2. Check if waybill_id exists, construct PDF URL
+            else if (orderData.courier?.waybill_id) {
+                labelUrl = `https://biteship.com/labels/${orderData.courier.waybill_id}.pdf`;
+            }
+
+            // 3. Fallback to tracking_id
+            else if (orderData.courier?.tracking_id) {
+                labelUrl = `https://biteship.com/labels/${orderData.courier.tracking_id}.pdf`;
+            }
 
             if (!labelUrl) {
-                throw new BadRequestException('Shipping label not available for this order');
+                this.logger.warn('⚠️ Shipping label not available yet', {
+                    orderId: biteshipOrderId,
+                    orderStatus: orderData.status,
+                });
+
+                throw new BadRequestException(
+                    'Shipping label is not available yet. Please wait a few minutes after shipping and try again.'
+                );
             }
 
-            this.logger.info('✅ Biteship: Shipping label URL retrieved');
+
+            this.logger.info('✅ Biteship: Shipping label URL retrieved', { labelUrl });
 
             return labelUrl;
         } catch (error: any) {
@@ -260,7 +288,11 @@ export class BiteshipService {
                 throw new BadRequestException('Order not found in Biteship');
             }
 
-            throw new BadRequestException('Failed to retrieve shipping label. Please try again.');
+            if (error instanceof BadRequestException) {
+                throw error;
+            }
+
+            throw new BadRequestException('Failed to retrieve shipping label. Please try again later.');
         }
     }
 
