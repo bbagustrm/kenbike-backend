@@ -7,9 +7,9 @@ import {
     Headers,
     HttpCode,
     HttpStatus,
-    BadRequestException,
     Inject,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { BiteshipWebhookService } from './biteship-webhook.service';
@@ -30,9 +30,9 @@ export class BiteshipWebhookController {
     @Post()
     @HttpCode(HttpStatus.OK)
     async handleWebhook(
+        @Res() res: Response,
         @Body() payload: any,
         @Headers('x-biteship-signature') signature?: string,
-        @Res() res: Response,
     ) {
         try {
             // ✅ Handle Biteship ping / test (body kosong)
