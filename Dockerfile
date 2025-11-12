@@ -22,13 +22,11 @@ COPY src ./src
 # Build the application
 RUN npm run build
 
-# Verify that main.js exists
+# Verify that main.js exists at the correct location
 RUN echo "=== Verifying build output ===" && \
-    ls -la dist/ && \
-    if [ ! -f "dist/main.js" ]; then \
-      echo "ERROR: dist/main.js not found after build!"; \
-      echo "Contents of dist directory:"; \
-      find dist -type f -name "*.js" | head -10; \
+    ls -la dist/src/ && \
+    if [ ! -f "dist/src/main.js" ]; then \
+      echo "ERROR: dist/src/main.js not found after build!"; \
       exit 1; \
     fi && \
     echo "✅ Build verification passed"
@@ -50,7 +48,7 @@ RUN npm ci --only=production
 COPY prisma ./prisma
 RUN npx prisma generate
 
-# Copy built application from builder stage
+# Copy built application from builder stage (entire dist folder)
 COPY --from=builder /usr/src/app/dist ./dist
 
 # Create uploads directory
@@ -59,5 +57,6 @@ RUN mkdir -p /app/uploads
 EXPOSE 3000
 
 # Use dumb-init to handle signals properly
+# PENTING: Gunakan dist/src/main.js
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]

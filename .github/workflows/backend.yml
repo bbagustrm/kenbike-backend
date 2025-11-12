@@ -33,35 +33,21 @@ jobs:
           echo "=== Checking dist folder ==="
           if [ -d "dist" ]; then
             echo "✅ dist folder exists"
-            echo "Contents of dist folder:"
-            ls -la dist/
-            echo "---"
-            find dist -type f -name "*.js" | head -10
+            echo "Contents of dist/src folder:"
+            ls -la dist/src/
           else
             echo "❌ dist folder not found!"
-            echo "Current directory contents:"
-            ls -la
             exit 1
           fi
           
           echo "=== Checking main.js ==="
-          if [ -f "dist/main.js" ]; then
-            echo "✅ dist/main.js found"
-            echo "File size: $(stat -c%s dist/main.js) bytes"
+          if [ -f "dist/src/main.js" ]; then
+            echo "✅ dist/src/main.js found"
+            echo "File size: $(stat -c%s dist/src/main.js) bytes"
           else
-            echo "❌ dist/main.js not found"
-            echo "Looking for main.js in other locations:"
-            find . -name "main.js" -type f 2>/dev/null | head -5
+            echo "❌ dist/src/main.js not found"
             exit 1
           fi
-
-      - name: Verify build output
-        run: |
-          if [ ! -f "dist/main.js" ]; then
-            echo "❌ Build failed: dist/main.js not found"
-            exit 1
-          fi
-          echo "✅ Build successful: dist/main.js exists"
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
@@ -90,22 +76,6 @@ jobs:
           command_timeout: 60m
           script: |
             cd /var/www/kenbike/backend
-            echo "🔄 Pulling latest image..."
             docker compose pull
-            
-            echo "🛑 Stopping containers..."
             docker compose down
-            
-            echo "🚀 Starting containers..."
             docker compose up -d
-            
-            echo "⏳ Waiting for backend to be healthy..."
-            sleep 15
-            
-            echo "📋 Checking container status..."
-            docker ps
-            
-            echo "📝 Checking backend logs..."
-            docker logs kenbike-backend --tail 30
-            
-            echo "✅ Deployment complete!"
