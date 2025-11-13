@@ -581,4 +581,74 @@ export class PaymentService {
         this.logger.info('✅ Order cancelled due to payment expiration', { orderNumber });
         // TODO Phase 4: Send email notification
     }
+
+    /**
+     * ✅ NEW: Mark order as paid (called by PayPal webhook)
+     */
+    async markOrderAsPaid(
+        orderNumber: string,
+        paymentData: {
+            paymentId: string;
+            paymentProvider: string;
+        },
+    ): Promise<void> {
+        this.logger.info('✅ Marking order as paid (PayPal)', {
+            orderNumber,
+            paymentId: paymentData.paymentId,
+        });
+
+        const order = await this.prisma.order.findUnique({
+            where: { orderNumber },
+        });
+
+        if (!order) {
+            throw new NotFoundException('Order not found');
+        }
+
+        if (order.status === 'PAID') {
+            this.logger.info('⚠️ Order already marked as paid', { orderNumber });
+            return;
+        }
+
+        await this.prisma.order.update({
+            where: { id: order.id },
+            data: {
+                status: 'PAID',
+                paidAt: new Date(),
+                paymentId: paymentData.paymentId,
+                paymentProvider: paymentData.paymentProvider.toUpperCase(),
+            },
+        });
+
+        this.logger.info('✅ Order marked as paid', { orderNumber });
+        // TODO Phase 4: Send email notification
+    }
+
+    /**
+     * ✅ NEW: Mark order as failed (called by PayPal webhook)
+     */
+    async markOrderAsFailed(orderNumber: string, reason: string): Promise<void> {
+        this.logger.info('❌ Marking order as failed', {
+            orderNumber,
+            reason,
+        });
+
+        const order = await this.prisma.order.findUnique({
+            where: { orderNumber },
+        });
+
+        if (!order) {
+            throw new NotFoundException('Order not found');
+        }
+
+        await this.prisma.order.update({
+            where: { id: order.id },
+            data: {
+                status: 'FAILED',
+            },
+        });
+
+        this.logger.info('✅ Order marked as failed', { orderNumber, reason });
+        // TODO Phase 4: Send email notification
+    }
 }
