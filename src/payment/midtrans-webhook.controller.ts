@@ -36,7 +36,7 @@ export class MidtransWebhookController {
         const isConfigured = this.midtransService.isConfigured();
 
         return {
-            status: 'success',
+            status: 'ok',
             message: 'Midtrans webhook endpoint is healthy',
             timestamp: new Date().toISOString(),
             midtrans_mode: isMidtransProduction ? 'PRODUCTION' : 'SANDBOX',
@@ -184,7 +184,7 @@ export class MidtransWebhookController {
             }
 
             return {
-                status: 'success',
+                status: 'ok',
                 code: 200,
                 message: 'Webhook processed successfully',
             };
