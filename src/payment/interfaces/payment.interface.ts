@@ -1,7 +1,5 @@
-// src/payment/interfaces/payment.interface.ts
-
 // ============================================
-// PAYMENT TYPES
+// PAYMENT INTERFACES
 // ============================================
 
 export interface PaymentResponse {
@@ -10,9 +8,12 @@ export interface PaymentResponse {
     data: {
         order_number: string;
         payment_method: string;
+        payment_provider?: string;
+        payment_id?: string;
         payment_url?: string;
         token?: string;
-        payment_id?: string;
+        currency?: string;
+        amount?: number;
         expires_at?: Date;
     };
 }
@@ -120,8 +121,8 @@ export interface PayPalOrderRequest {
             };
             address: {
                 address_line_1: string;
-                admin_area_2: string; // City
-                admin_area_1?: string; // State
+                admin_area_2: string;
+                admin_area_1?: string;
                 postal_code: string;
                 country_code: string;
             };
