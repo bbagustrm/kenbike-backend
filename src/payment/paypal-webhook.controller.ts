@@ -8,14 +8,12 @@ import {
     HttpCode,
     HttpStatus,
     Inject,
-    Res,
+    Get,
 } from '@nestjs/common';
-import { Response } from 'express';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { PayPalService } from './paypal.service';
 import { PaymentService } from './payment.service';
-import { PayPalWebhookEvent } from './interfaces/payment.interface';
 
 @Controller('webhooks/paypal')
 export class PayPalWebhookController {
@@ -25,34 +23,33 @@ export class PayPalWebhookController {
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
+    @Get('health')
+    @HttpCode(HttpStatus.OK)
+    healthCheck() {
+        return {
+            status: 'ok',
+            message: 'PayPal webhook endpoint is healthy',
+            timestamp: new Date().toISOString(),
+        };
+    }
+
     /**
-     * POST /api/v1/webhooks/paypal
+     * POST /webhooks/paypal
      * Handle PayPal webhook events
      */
     @Post()
     @HttpCode(HttpStatus.OK)
     async handleWebhook(
-        @Res() res: Response,
         @Headers() headers: any,
-        @Body() event: PayPalWebhookEvent,
+        @Body() event: any,
     ) {
+        this.logger.info('💳 PayPal webhook received', {
+            eventType: event.event_type,
+            resourceType: event.resource_type,
+            timestamp: new Date().toISOString(),
+        });
+
         try {
-            this.logger.info('💳 PayPal webhook received', {
-                eventType: event.event_type,
-                resourceType: event.resource_type,
-            });
-
-            // Verify webhook signature (optional, implement if needed)
-            // const isValid = await this.paypalService.verifyWebhook(headers, event);
-            // if (!isValid) {
-            //     this.logger.warn('⚠️ Invalid PayPal webhook signature');
-            //     res.status(HttpStatus.UNAUTHORIZED).json({
-            //         success: false,
-            //         message: 'Invalid signature',
-            //     });
-            //     return;
-            // }
-
             // Handle different event types
             if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
                 // Payment captured successfully
@@ -70,12 +67,10 @@ export class PayPalWebhookController {
                         captureId,
                     });
 
-                    await this.paymentService.markOrderAsPaid(orderNumber, {
-                        paymentId: captureId,
-                        paymentProvider: 'paypal',
+                    await this.paymentService.handlePaymentSuccess(orderNumber, 'PAYPAL', {
+                        transaction_id: captureId,
+                        paypal_order_id: orderId,
                     });
-                } else {
-                    this.logger.warn('⚠️ PayPal webhook missing order_id', { event });
                 }
             } else if (event.event_type === 'PAYMENT.CAPTURE.DENIED') {
                 // Payment denied
@@ -90,8 +85,9 @@ export class PayPalWebhookController {
                         orderNumber,
                     });
 
-                    await this.paymentService.markOrderAsFailed(
+                    await this.paymentService.handlePaymentFailed(
                         orderNumber,
+                        'PAYPAL',
                         'Payment capture denied',
                     );
                 }
@@ -101,25 +97,21 @@ export class PayPalWebhookController {
                 });
             }
 
-            this.logger.info('✅ PayPal webhook processed successfully', {
-                eventType: event.event_type,
-            });
-
-            res.json({
-                success: true,
-                message: 'Webhook processed',
-            });
+            return {
+                status: 'ok',
+                message: 'Webhook processed successfully',
+            };
         } catch (error: any) {
             this.logger.error('❌ PayPal webhook processing failed', {
                 error: error.message,
                 event,
             });
 
-            // Return 200 to prevent PayPal from retrying
-            res.json({
-                success: false,
-                message: error.message,
-            });
+            // Return ok to prevent retries
+            return {
+                status: 'ok',
+                message: 'Error logged',
+            };
         }
     }
 }
