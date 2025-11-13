@@ -14,6 +14,8 @@ import { PrismaService } from '../common/prisma.service';
 import { BiteshipService } from './biteship.service';
 import { InternationalShippingService } from './international-shipping.service';
 import { PaginationUtil } from '../utils/pagination.util';
+import { PaymentService } from '../payment/payment.service';
+import { PaymentMethod } from '@prisma/client';
 import {
     CalculateShippingDto,
     CalculateShippingResponse,
@@ -41,6 +43,7 @@ export class OrderService {
         private biteshipService: BiteshipService,
         private internationalShippingService: InternationalShippingService,
         private configService: ConfigService,
+        private paymentService: PaymentService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {
         this.taxRate = parseFloat(this.configService.get<string>('TAX_RATE') || '0.11');
@@ -368,7 +371,7 @@ export class OrderService {
                     total: totals.total,
                     currency: dto.currency,
                     exchangeRate,
-                    paymentMethod: dto.payment_method,
+                    paymentMethod: dto.payment_method || null,
                     shippingType: dto.shipping_type,
                     ...shippingData,
                     recipientName: dto.recipient_name,
@@ -444,6 +447,83 @@ export class OrderService {
                 createdAt: order.createdAt,
             },
         };
+    }
+
+    /**
+     * ✅ NEW: Helper method to get order for payment processing
+     */
+    async getOrderForPayment(orderNumber: string, userId: string) {
+        const order = await this.prisma.order.findUnique({
+            where: { orderNumber },
+            include: {
+                items: {
+                    select: {
+                        productName: true,
+                        variantName: true,
+                        quantity: true,
+                        pricePerItem: true,
+                        subtotal: true,
+                    },
+                },
+            },
+        });
+
+        if (!order) {
+            throw new NotFoundException('Order not found');
+        }
+
+        if (order.userId !== userId) {
+            throw new ForbiddenException('Access denied');
+        }
+
+        if (order.status !== 'PENDING') {
+            throw new BadRequestException(
+                `Cannot process payment for order with status: ${order.status}`,
+            );
+        }
+
+        return order;
+    }
+
+    /**
+     * ✅ NEW: Update order payment info (called by payment service after payment created)
+     */
+    async updateOrderPayment(
+        orderNumber: string,
+        paymentData: {
+            paymentMethod: string; // ex: "MIDTRANS_SNAP", "PAYPAL", "MANUAL"
+            paymentProvider: string;
+            paymentId: string;
+        },
+    ) {
+        // Validasi agar string cocok dengan enum PaymentMethod
+        if (!Object.values(PaymentMethod).includes(paymentData.paymentMethod as PaymentMethod)) {
+            throw new Error(`Invalid payment method: ${paymentData.paymentMethod}`);
+        }
+
+        return this.prisma.order.update({
+            where: { orderNumber },
+            data: {
+                paymentMethod: paymentData.paymentMethod as PaymentMethod,
+                paymentProvider: paymentData.paymentProvider,
+                paymentId: paymentData.paymentId,
+            },
+        });
+    }
+
+    /**
+     * ✅ NEW: Mark order as paid (called by webhook after successful payment)
+     */
+    async markOrderAsPaid(orderNumber: string, paidAt?: Date) {
+        this.logger.info(`💰 Marking order as paid: ${orderNumber}`);
+
+        return this.prisma.order.update({
+            where: { orderNumber },
+            data: {
+                status: 'PAID',
+                paidAt: paidAt || new Date(),
+            },
+        });
     }
 
     /**

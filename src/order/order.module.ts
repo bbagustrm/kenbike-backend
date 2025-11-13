@@ -1,5 +1,5 @@
 //  src/order/order.module.ts
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { OrderController } from './order.controller';
 import { AdminOrderController } from './admin-order.controller';
@@ -11,9 +11,13 @@ import { InternationalShippingService } from './international-shipping.service';
 import { OrderCompletionCron } from './cron/order-completion.cron';
 import { PrismaService } from '../common/prisma.service';
 import { ValidationService } from '../common/validation.service';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
-  imports: [ConfigModule],
+  imports: [
+      ConfigModule,
+      forwardRef(() => PaymentModule),
+  ],
   controllers: [
     OrderController,
     AdminOrderController,
