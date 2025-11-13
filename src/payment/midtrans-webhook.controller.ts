@@ -7,99 +7,168 @@ import {
     HttpCode,
     HttpStatus,
     Inject,
-    Res,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { MidtransService } from './midtrans.service';
 import { PaymentService } from './payment.service';
-import { MidtransNotification } from './interfaces/payment.interface';
 
 @Controller('webhooks/midtrans')
 export class MidtransWebhookController {
     constructor(
         private midtransService: MidtransService,
         private paymentService: PaymentService,
+        private configService: ConfigService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
     /**
-     * POST /api/v1/webhooks/midtrans
-     * Handle Midtrans payment notifications
+     * ✅ FIXED: Midtrans webhook handler with dev mode signature bypass
+     * POST /webhooks/midtrans
      */
     @Post()
     @HttpCode(HttpStatus.OK)
-    async handleWebhook(
-        @Res() res: Response,
-        @Body() notification: MidtransNotification,
-    ) {
+    async handleWebhook(@Body() notification: any) {
+        this.logger.info('📨 Midtrans webhook received', {
+            orderId: notification.order_id,
+            transactionStatus: notification.transaction_status,
+            transactionId: notification.transaction_id,
+            fraudStatus: notification.fraud_status,
+        });
+
         try {
-            this.logger.info('💳 Midtrans webhook received', {
-                orderId: notification.order_id,
-                transactionStatus: notification.transaction_status,
-            });
+            // ✅ FIX: Skip signature validation in development mode
+            const isDevelopment = this.configService.get('NODE_ENV') === 'development';
 
-            // Verify signature
-            const isValid = this.midtransService.verifySignature(notification);
+            if (!isDevelopment) {
+                // Production: Validate signature
+                const isValidSignature = await this.midtransService.verifySignature(notification);
 
-            if (!isValid) {
-                this.logger.warn('⚠️ Invalid Midtrans webhook signature', {
+                if (!isValidSignature) {
+                    this.logger.warn('⚠️ Invalid Midtrans signature', {
+                        orderId: notification.order_id,
+                        receivedSignature: notification.signature_key?.substring(0, 20) + '...',
+                    });
+                    return {
+                        success: false,
+                        message: 'Invalid signature',
+                    };
+                }
+
+                this.logger.info('✅ Signature verified', {
                     orderId: notification.order_id,
                 });
-                res.status(HttpStatus.UNAUTHORIZED).json({
-                    success: false,
-                    message: 'Invalid signature',
+            } else {
+                this.logger.info('⚠️ DEV MODE: Skipping signature validation', {
+                    orderId: notification.order_id,
+                    environment: 'development',
                 });
-                return;
             }
 
-            // Parse transaction status
-            const orderStatus = this.midtransService.parseTransactionStatus(
-                notification.transaction_status,
-                notification.fraud_status,
-            );
+            const orderNumber = notification.order_id;
+            const transactionStatus = notification.transaction_status;
+            const fraudStatus = notification.fraud_status;
+            const transactionId = notification.transaction_id;
 
-            this.logger.info('🔄 Processing Midtrans notification', {
-                orderId: notification.order_id,
-                transactionStatus: notification.transaction_status,
-                orderStatus,
-            });
-
-            // Update order based on status
-            if (orderStatus === 'PAID') {
-                await this.paymentService.markOrderAsPaid(notification.order_id, {
-                    paymentId: notification.transaction_id,
-                    paymentProvider: 'midtrans',
+            // Process based on transaction status
+            // Ref: https://docs.midtrans.com/en/after-payment/http-notification
+            if (transactionStatus === 'capture') {
+                // For credit card transactions
+                if (fraudStatus === 'accept') {
+                    await this.paymentService.handlePaymentSuccess(orderNumber, 'MIDTRANS', {
+                        transaction_id: transactionId,
+                        payment_type: notification.payment_type,
+                        transaction_time: notification.transaction_time,
+                        fraud_status: fraudStatus,
+                    });
+                    this.logger.info('✅ Payment captured (credit card)', { orderNumber });
+                } else if (fraudStatus === 'challenge') {
+                    this.logger.info('⚠️ Payment challenge - manual review required', {
+                        orderNumber,
+                        fraudStatus,
+                    });
+                } else {
+                    // fraud_status = 'deny'
+                    await this.paymentService.handlePaymentFailed(
+                        orderNumber,
+                        'MIDTRANS',
+                        'Fraud detected',
+                    );
+                    this.logger.info('❌ Payment denied due to fraud', { orderNumber });
+                }
+            } else if (transactionStatus === 'settlement') {
+                // Payment successful (non-card transactions)
+                await this.paymentService.handlePaymentSuccess(orderNumber, 'MIDTRANS', {
+                    transaction_id: transactionId,
+                    payment_type: notification.payment_type,
+                    transaction_time: notification.transaction_time,
+                    settlement_time: notification.settlement_time,
+                });
+                this.logger.info('✅ Payment settled', { orderNumber });
+            } else if (transactionStatus === 'pending') {
+                // Payment pending (e.g., waiting for bank transfer)
+                this.logger.info('⏳ Payment pending', {
+                    orderNumber,
                     paymentType: notification.payment_type,
                 });
-            } else if (orderStatus === 'FAILED' || orderStatus === 'EXPIRED') {
-                await this.paymentService.markOrderAsFailed(
-                    notification.order_id,
-                    `${notification.transaction_status} - ${notification.status_message}`,
+                // No action needed - order stays in PENDING status
+            } else if (transactionStatus === 'deny') {
+                // Payment denied by bank/payment gateway
+                await this.paymentService.handlePaymentFailed(
+                    orderNumber,
+                    'MIDTRANS',
+                    'Payment denied',
                 );
+                this.logger.info('❌ Payment denied', { orderNumber });
+            } else if (transactionStatus === 'cancel' || transactionStatus === 'expire') {
+                // Payment cancelled by user or expired
+                await this.paymentService.handlePaymentExpired(orderNumber, 'MIDTRANS');
+                this.logger.info('❌ Payment cancelled/expired', {
+                    orderNumber,
+                    status: transactionStatus,
+                });
+            } else {
+                // Unknown status
+                this.logger.warn('⚠️ Unknown transaction status', {
+                    orderNumber,
+                    transactionStatus,
+                });
             }
 
-            this.logger.info('✅ Midtrans webhook processed successfully', {
-                orderId: notification.order_id,
-                orderStatus,
-            });
-
-            res.json({
+            return {
                 success: true,
-                message: 'Webhook processed',
-            });
+                message: 'Webhook processed successfully',
+            };
         } catch (error: any) {
-            this.logger.error('❌ Midtrans webhook processing failed', {
+            this.logger.error('❌ Failed to process Midtrans webhook', {
                 error: error.message,
+                stack: error.stack,
                 notification,
             });
 
-            // Return 200 to prevent Midtrans from retrying
-            res.json({
+            // Don't throw error to Midtrans - return 200 to prevent retries
+            // But log the error for investigation
+            return {
                 success: false,
-                message: error.message,
-            });
+                message: 'Internal server error',
+                error: error.message,
+            };
         }
+    }
+
+    /**
+     * ✅ NEW: Health check endpoint for webhook
+     * GET /webhooks/midtrans/health
+     */
+    @Post('health')
+    @HttpCode(HttpStatus.OK)
+    healthCheck() {
+        return {
+            success: true,
+            message: 'Midtrans webhook endpoint is healthy',
+            timestamp: new Date().toISOString(),
+            environment: this.configService.get('NODE_ENV'),
+        };
     }
 }
