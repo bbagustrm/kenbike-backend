@@ -27,7 +27,7 @@ export class MidtransService {
         this.isProduction = this.configService.get<string>('MIDTRANS_IS_PRODUCTION') === 'true';
 
         if (!this.serverKey || !clientKey) {
-            this.logger.warn('⚠️  Midtrans credentials not configured');
+            this.logger.warn('⚠️ Midtrans credentials not configured');
         }
 
         // Initialize Midtrans Snap
@@ -39,6 +39,13 @@ export class MidtransService {
     }
 
     /**
+     * Check if Midtrans is configured
+     */
+    isConfigured(): boolean {
+        return !!this.serverKey && !!this.configService.get<string>('MIDTRANS_CLIENT_KEY');
+    }
+
+    /**
      * Create Snap token for payment
      */
     async createSnapToken(orderData: MidtransSnapRequest): Promise<MidtransSnapResponse> {
@@ -46,13 +53,28 @@ export class MidtransService {
             this.logger.info('💳 Midtrans: Creating Snap token', {
                 orderId: orderData.transaction_details.order_id,
                 amount: orderData.transaction_details.gross_amount,
+                itemsCount: orderData.item_details?.length || 0,
             });
+
+            // Log item details for debugging
+            if (orderData.item_details) {
+                const itemsTotal = orderData.item_details.reduce((sum, item) => {
+                    return sum + (item.price * item.quantity);
+                }, 0);
+
+                this.logger.info('📦 Item details summary', {
+                    orderId: orderData.transaction_details.order_id,
+                    itemsTotal,
+                    grossAmount: orderData.transaction_details.gross_amount,
+                    match: itemsTotal === orderData.transaction_details.gross_amount,
+                });
+            }
 
             const transaction = await this.snap.createTransaction(orderData);
 
             this.logger.info('✅ Midtrans: Snap token created', {
                 orderId: orderData.transaction_details.order_id,
-                token: transaction.token,
+                token: transaction.token.substring(0, 20) + '...',
             });
 
             return {
@@ -62,12 +84,72 @@ export class MidtransService {
         } catch (error: any) {
             this.logger.error('❌ Midtrans: Failed to create Snap token', {
                 error: error.message,
-                response: error.response?.data,
+                apiResponse: error.ApiResponse,
+                httpStatusCode: error.httpStatusCode,
             });
 
-            throw new BadRequestException(
-                error.message || 'Failed to create payment. Please try again.',
-            );
+            // Format error message for user
+            let errorMessage = 'Failed to create payment. ';
+
+            if (error.ApiResponse?.error_messages) {
+                errorMessage += error.ApiResponse.error_messages.join(', ');
+            } else if (error.message) {
+                errorMessage += error.message;
+            } else {
+                errorMessage += 'Please try again or contact support.';
+            }
+
+            throw new BadRequestException(errorMessage);
+        }
+    }
+
+    /**
+     * ✅ Verify Midtrans signature
+     * Formula: SHA512(order_id + status_code + gross_amount + server_key)
+     * Ref: https://docs.midtrans.com/en/after-payment/http-notification#verifying-notification-authenticity
+     */
+    async verifySignature(notification: MidtransNotification): Promise<boolean> {
+        const { order_id, status_code, gross_amount, signature_key } = notification;
+
+        if (!order_id || !status_code || !gross_amount || !signature_key) {
+            this.logger.warn('⚠️ Missing required fields for signature verification', {
+                hasOrderId: !!order_id,
+                hasStatusCode: !!status_code,
+                hasGrossAmount: !!gross_amount,
+                hasSignatureKey: !!signature_key,
+            });
+            return false;
+        }
+
+        try {
+            // Generate expected signature
+            // IMPORTANT: gross_amount must be formatted without decimal if integer
+            const grossAmountStr = gross_amount.toString();
+            const stringToHash = `${order_id}${status_code}${grossAmountStr}${this.serverKey}`;
+
+            const hash = crypto
+                .createHash('sha512')
+                .update(stringToHash)
+                .digest('hex');
+
+            const isValid = hash === signature_key;
+
+            this.logger.info('🔐 Signature verification', {
+                orderId: order_id,
+                statusCode: status_code,
+                grossAmount: grossAmountStr,
+                expectedSignature: hash.substring(0, 20) + '...',
+                receivedSignature: signature_key.substring(0, 20) + '...',
+                isValid,
+            });
+
+            return isValid;
+        } catch (error: any) {
+            this.logger.error('❌ Signature verification failed', {
+                error: error.message,
+                notification,
+            });
+            return false;
         }
     }
 
@@ -76,95 +158,58 @@ export class MidtransService {
      */
     async getTransactionStatus(orderId: string): Promise<any> {
         try {
-            this.logger.info('🔍 Midtrans: Getting transaction status', { orderId });
+            this.logger.info('🔍 Checking transaction status', { orderId });
 
-            const response = await this.snap.transaction.status(orderId);
+            const statusResponse = await this.snap.transaction.status(orderId);
 
-            this.logger.info('✅ Midtrans: Transaction status retrieved', {
+            this.logger.info('✅ Transaction status retrieved', {
                 orderId,
-                status: response.transaction_status,
+                status: statusResponse.transaction_status,
+                fraudStatus: statusResponse.fraud_status,
             });
 
-            return response;
+            return statusResponse;
         } catch (error: any) {
-            this.logger.error('❌ Midtrans: Failed to get transaction status', {
+            this.logger.error('❌ Failed to get transaction status', {
                 orderId,
                 error: error.message,
             });
-
-            throw new BadRequestException('Failed to get payment status');
+            throw new BadRequestException('Failed to get transaction status');
         }
     }
 
     /**
-     * Verify webhook notification signature
+     * Cancel transaction
      */
-    verifySignature(notification: MidtransNotification): boolean {
+    async cancelTransaction(orderId: string): Promise<any> {
         try {
-            const { order_id, status_code, gross_amount, signature_key } = notification;
+            this.logger.info('🚫 Cancelling transaction', { orderId });
 
-            // Create signature hash
-            const hash = crypto
-                .createHash('sha512')
-                .update(`${order_id}${status_code}${gross_amount}${this.serverKey}`)
-                .digest('hex');
+            const cancelResponse = await this.snap.transaction.cancel(orderId);
 
-            const isValid = hash === signature_key;
+            this.logger.info('✅ Transaction cancelled', {
+                orderId,
+                status: cancelResponse.transaction_status,
+            });
 
-            if (!isValid) {
-                this.logger.warn('⚠️ Midtrans: Invalid webhook signature', { order_id });
-            }
-
-            return isValid;
+            return cancelResponse;
         } catch (error: any) {
-            this.logger.error('❌ Midtrans: Signature verification failed', {
+            this.logger.error('❌ Failed to cancel transaction', {
+                orderId,
                 error: error.message,
             });
-            return false;
+            throw new BadRequestException('Failed to cancel transaction');
         }
     }
 
     /**
-     * Parse transaction status to order status
+     * Get Snap payment page URL
      */
-    parseTransactionStatus(
-        transactionStatus: string,
-        fraudStatus?: string,
-    ): 'PAID' | 'PENDING' | 'FAILED' | 'EXPIRED' {
-        // Midtrans transaction_status mapping
-        // https://docs.midtrans.com/docs/http-notification-transaction-status
+    getSnapUrl(token: string): string {
+        const baseUrl = this.isProduction
+            ? 'https://app.midtrans.com/snap/v3/redirection'
+            : 'https://app.sandbox.midtrans.com/snap/v3/redirection';
 
-        if (transactionStatus === 'capture') {
-            // For credit card
-            if (fraudStatus === 'accept') {
-                return 'PAID';
-            } else if (fraudStatus === 'challenge') {
-                return 'PENDING';
-            } else {
-                return 'FAILED';
-            }
-        } else if (transactionStatus === 'settlement') {
-            return 'PAID';
-        } else if (transactionStatus === 'pending') {
-            return 'PENDING';
-        } else if (
-            transactionStatus === 'deny' ||
-            transactionStatus === 'cancel' ||
-            transactionStatus === 'expire'
-        ) {
-            if (transactionStatus === 'expire') {
-                return 'EXPIRED';
-            }
-            return 'FAILED';
-        }
-
-        return 'PENDING';
-    }
-
-    /**
-     * Check if Midtrans is configured
-     */
-    isConfigured(): boolean {
-        return !!this.serverKey;
+        return `${baseUrl}/${token}`;
     }
 }
