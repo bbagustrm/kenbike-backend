@@ -25,6 +25,19 @@ export const RegisterSchema = z.object({
     country: z
         .string()
         .max(50, 'Country must not exceed 50 characters')
+        .default('Indonesia'),
+    city: z
+        .string()
+        .max(100, 'City must not exceed 100 characters')
+        .optional(),
+    province: z
+        .string()
+        .max(100, 'Province must not exceed 100 characters')
+        .optional(),
+    postal_code: z
+        .string()
+        .max(10, 'Postal code must not exceed 10 characters')
+        .regex(/^[0-9]{5}$/, 'Postal code must be 5 digits')
         .optional(),
     password: z
         .string()
@@ -35,7 +48,7 @@ export const RegisterSchema = z.object({
         .regex(/[!@#$%^&*]/, 'Password must contain at least one special character (!@#$%^&*)'),
     address: z
         .string()
-        .max(255, 'Address must not exceed 255 characters')
+        .max(500, 'Address must not exceed 500 characters')
         .optional(),
 });
 

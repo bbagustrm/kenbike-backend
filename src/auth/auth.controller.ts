@@ -203,7 +203,7 @@
         }
 
         @UseGuards(JwtAuthGuard)
-        @Patch('password')
+        @Patch('password')  
         async updatePassword(
             @CurrentUser('id') userId: string,
             @Body() body: UpdatePasswordDto,
