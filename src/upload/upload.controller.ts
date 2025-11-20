@@ -20,6 +20,7 @@ import { Role } from '@prisma/client';
 import * as sharp from 'sharp';
 import { join } from 'path';
 import { promises as fs } from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 
 type UploadFolder = 'profiles' | 'products' | 'variants' | 'gallery' | 'reviews';
 
@@ -28,19 +29,19 @@ type UploadFolder = 'profiles' | 'products' | 'variants' | 'gallery' | 'reviews'
 export class UploadController {
     constructor(private readonly localStorageService: LocalStorageService) {}
 
-    // ✅ Helper: Convert image ke WebP untuk hemat size
+    // ✅ Helper: Convert image ke WebP dengan UUID filename
     private async convertToWebP(
         file: Express.Multer.File,
         outputPath: string,
         quality = 80
     ): Promise<void> {
         await sharp(file.buffer)
-            .webp({ quality, effort: 6 }) // effort 6 = balance speed & compression
+            .webp({ quality, effort: 6 })
             .toFile(outputPath);
     }
 
     /**
-     * POST /upload/image - Upload dengan auto WebP conversion
+     * POST /upload/image - Upload dengan auto WebP conversion dan UUID
      */
     @Post('image')
     @Roles(Role.ADMIN, Role.OWNER)
@@ -54,7 +55,7 @@ export class UploadController {
     async uploadImage(
         @UploadedFile() file: Express.Multer.File,
         @Body('folder') folder: UploadFolder,
-        @Body('convertWebP') convertWebP?: string, // "true" untuk convert
+        @Body('convertWebP') convertWebP?: string,
     ) {
         if (!file) {
             throw new BadRequestException('File is required');
@@ -65,22 +66,18 @@ export class UploadController {
 
         FileUploadUtil.validateImageFile(file);
 
-        // ✅ Convert ke WebP jika diminta (default: true untuk products/gallery)
         const shouldConvert = convertWebP === 'true' ||
             ['products', 'gallery', 'variants'].includes(folder);
 
         let result;
 
         if (shouldConvert) {
-            // Simpan dengan format WebP
-            const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+            // ✅ FIX: Generate UUID filename, BUKAN dari originalname
+            const webpFilename = `${uuidv4()}.webp`;
             const uploadDir = join(process.cwd(), 'uploads', folder);
             const outputPath = join(uploadDir, webpFilename);
 
-            // Pastikan folder exists
             await fs.mkdir(uploadDir, { recursive: true });
-
-            // Convert & save
             await this.convertToWebP(file, outputPath);
 
             result = {
@@ -88,7 +85,6 @@ export class UploadController {
                 path: outputPath,
             };
         } else {
-            // Upload normal
             result = await this.localStorageService.uploadImage(file, folder);
         }
 
@@ -103,7 +99,7 @@ export class UploadController {
     }
 
     /**
-     * POST /upload/images - Batch upload dengan WebP
+     * POST /upload/images - Batch upload dengan WebP dan UUID
      */
     @Post('images')
     @Roles(Role.ADMIN, Role.OWNER)
@@ -134,7 +130,8 @@ export class UploadController {
 
         const uploadPromises = files.map(async (file) => {
             if (shouldConvert) {
-                const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+                // ✅ FIX: Generate UUID filename untuk setiap file
+                const webpFilename = `${uuidv4()}.webp`;
                 const uploadDir = join(process.cwd(), 'uploads', folder);
                 const outputPath = join(uploadDir, webpFilename);
 
@@ -179,13 +176,13 @@ export class UploadController {
         }
         FileUploadUtil.validateImageFile(file);
 
-        // Profile images biasanya kecil, convert ke WebP
-        const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+        // ✅ FIX: Generate UUID filename
+        const webpFilename = `${uuidv4()}.webp`;
         const uploadDir = join(process.cwd(), 'uploads', 'profiles');
         const outputPath = join(uploadDir, webpFilename);
 
         await fs.mkdir(uploadDir, { recursive: true });
-        await this.convertToWebP(file, outputPath, 85); // Kualitas lebih tinggi untuk profile
+        await this.convertToWebP(file, outputPath, 85);
 
         return {
             message: 'Profile image uploaded successfully',
@@ -212,7 +209,8 @@ export class UploadController {
         }
         FileUploadUtil.validateImageFile(file);
 
-        const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+        // ✅ FIX: Generate UUID filename
+        const webpFilename = `${uuidv4()}.webp`;
         const uploadDir = join(process.cwd(), 'uploads', 'products');
         const outputPath = join(uploadDir, webpFilename);
 
@@ -245,7 +243,8 @@ export class UploadController {
         FileUploadUtil.validateMultipleFiles(files, 5);
 
         const uploadPromises = files.map(async (file) => {
-            const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+            // ✅ FIX: Generate UUID filename
+            const webpFilename = `${uuidv4()}.webp`;
             const uploadDir = join(process.cwd(), 'uploads', 'variants');
             const outputPath = join(uploadDir, webpFilename);
 
@@ -286,7 +285,8 @@ export class UploadController {
         FileUploadUtil.validateMultipleFiles(files, 20);
 
         const uploadPromises = files.map(async (file) => {
-            const webpFilename = file.originalname.replace(/\.[^.]+$/, '.webp');
+            // ✅ FIX: Generate UUID filename
+            const webpFilename = `${uuidv4()}.webp`;
             const uploadDir = join(process.cwd(), 'uploads', 'gallery');
             const outputPath = join(uploadDir, webpFilename);
 
