@@ -6,13 +6,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-// ✅ Add type for storage folders
 export type StorageFolder = 'profiles' | 'products' | 'variants' | 'gallery' | 'reviews';
 
 @Injectable()
 export class LocalStorageService {
     private readonly uploadDir: string;
     private readonly baseUrl: string;
+    private readonly nodeEnv: string;
 
     constructor(
         private configService: ConfigService,
@@ -20,10 +20,12 @@ export class LocalStorageService {
     ) {
         this.uploadDir = this.configService.get<string>('UPLOAD_DIR') || './uploads';
         this.baseUrl = this.configService.get<string>('BASE_URL') || 'http://localhost:3000';
+        this.nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
 
         this.logger.info(`📁 Storage initialized:`, {
             uploadDir: this.uploadDir,
             baseUrl: this.baseUrl,
+            nodeEnv: this.nodeEnv,
             absolutePath: path.resolve(this.uploadDir),
         });
 
@@ -31,10 +33,7 @@ export class LocalStorageService {
     }
 
     private ensureUploadDir() {
-        // ✅ Add 'gallery' to folders array
         const folders: StorageFolder[] = ['profiles', 'products', 'variants', 'gallery', 'reviews'];
-
-        // Get absolute path
         const absoluteUploadDir = path.resolve(this.uploadDir);
 
         this.logger.info(`📂 Ensuring upload directory exists:`, {
@@ -42,7 +41,6 @@ export class LocalStorageService {
             absolute: absoluteUploadDir,
         });
 
-        // Create main upload directory
         if (!fs.existsSync(absoluteUploadDir)) {
             try {
                 fs.mkdirSync(absoluteUploadDir, { recursive: true, mode: 0o755 });
@@ -55,7 +53,6 @@ export class LocalStorageService {
             this.logger.info(`✅ Upload directory already exists: ${absoluteUploadDir}`);
         }
 
-        // Create subfolders
         folders.forEach((folder) => {
             const folderPath = path.join(absoluteUploadDir, folder);
 
@@ -69,7 +66,6 @@ export class LocalStorageService {
                 }
             }
 
-            // Check permissions
             try {
                 fs.accessSync(folderPath, fs.constants.W_OK | fs.constants.R_OK);
                 this.logger.info(`✅ Folder ${folder} is writable`);
@@ -80,9 +76,27 @@ export class LocalStorageService {
         });
     }
 
+    /**
+     * ✅ FIXED: Generate proper URL based on environment
+     * Development: /uploads/products/uuid.webp (relative)
+     * Production: https://api.kenbike.store/uploads/products/uuid.webp (full URL)
+     */
+    private generateImageUrl(folder: StorageFolder, filename: string): string {
+        const relativePath = `/uploads/${folder}/${filename}`;
+
+        // ⭐ CRITICAL: Check environment
+        if (this.nodeEnv === 'production') {
+            // Production: Return full URL
+            return `${this.baseUrl}${relativePath}`;
+        } else {
+            // Development: Return relative path
+            return relativePath;
+        }
+    }
+
     async uploadImage(
         file: Express.Multer.File,
-        folder: StorageFolder, // ✅ Use StorageFolder type
+        folder: StorageFolder,
     ): Promise<{ url: string; path: string }> {
         try {
             this.logger.info('📤 Starting file upload:', {
@@ -91,6 +105,7 @@ export class LocalStorageService {
                 size: file.size,
                 bufferLength: file.buffer?.length,
                 folder,
+                environment: this.nodeEnv,
             });
 
             if (!file) {
@@ -109,13 +124,13 @@ export class LocalStorageService {
                 );
             }
 
-            const maxSize = folder === 'gallery' ? 5 * 1024 * 1024 : 2 * 1024 * 1024; // 5MB for gallery, 2MB for others
+            const maxSize = folder === 'gallery' ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
             if (file.size > maxSize) {
                 const maxSizeMB = folder === 'gallery' ? 5 : 2;
                 throw new BadRequestException(`File size must not exceed ${maxSizeMB}MB`);
             }
 
-            // Generate filename
+            // Generate filename with UUID
             const ext = path.extname(file.originalname).toLowerCase();
             if (!ext || !['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
                 throw new BadRequestException('Invalid file extension');
@@ -151,7 +166,7 @@ export class LocalStorageService {
                 throw new BadRequestException(`Cannot write to upload folder. Permission denied.`);
             }
 
-            // Write file synchronously for better error handling
+            // Write file
             try {
                 this.logger.info('💾 Writing file...');
                 fs.writeFileSync(filePath, file.buffer, { mode: 0o644 });
@@ -173,31 +188,22 @@ export class LocalStorageService {
                 throw new BadRequestException('File was not saved properly');
             }
 
-            // Get file stats
             const stats = fs.statSync(filePath);
             this.logger.info('📊 File stats:', {
                 filePath,
                 exists: true,
                 size: stats.size,
                 mode: stats.mode.toString(8),
-                uid: stats.uid,
-                gid: stats.gid,
             });
 
-            // Verify file size matches
-            if (stats.size !== file.size) {
-                this.logger.warn('⚠️ File size mismatch:', {
-                    original: file.size,
-                    saved: stats.size,
-                });
-            }
-
-            const url = `${this.baseUrl}/uploads/${folder}/${filename}`;
+            // ⭐ CRITICAL: Generate environment-aware URL
+            const url = this.generateImageUrl(folder, filename);
 
             this.logger.info('✅ Upload complete:', {
                 url,
                 filePath,
                 size: stats.size,
+                environment: this.nodeEnv,
             });
 
             return { url, path: filePath };
@@ -217,10 +223,6 @@ export class LocalStorageService {
         }
     }
 
-    /**
-     * Delete a single file by URL or path
-     * This is an alias for deleteImage for better naming consistency
-     */
     async deleteFile(fileUrl: string): Promise<void> {
         return this.deleteImage(fileUrl);
     }
@@ -240,7 +242,6 @@ export class LocalStorageService {
                     return;
                 }
             } else {
-                // It's a relative path
                 const urlParts = imageUrl.split('/uploads/');
                 if (urlParts.length < 2) {
                     this.logger.warn(`Invalid image URL format: ${imageUrl}`);
@@ -252,7 +253,6 @@ export class LocalStorageService {
             const absoluteUploadDir = path.resolve(this.uploadDir);
             const filePath = path.join(absoluteUploadDir, relativePath);
 
-            // Security check: ensure the file is within the upload directory
             const normalizedFilePath = path.normalize(filePath);
             const normalizedUploadDir = path.normalize(absoluteUploadDir);
 
@@ -272,8 +272,6 @@ export class LocalStorageService {
                 error: error.message,
                 url: imageUrl,
             });
-            // Don't throw error, just log it
-            // This prevents deletion failures from breaking other operations
         }
     }
 
@@ -283,17 +281,10 @@ export class LocalStorageService {
         }
     }
 
-    /**
-     * Delete multiple files by URLs or paths
-     * This is an alias for deleteImages for better naming consistency
-     */
     async deleteFiles(fileUrls: string[]): Promise<void> {
         return this.deleteImages(fileUrls);
     }
 
-    /**
-     * Check if a file exists
-     */
     fileExists(fileUrl: string): boolean {
         try {
             if (!fileUrl) return false;
@@ -324,9 +315,6 @@ export class LocalStorageService {
         }
     }
 
-    /**
-     * Get file size in bytes
-     */
     getFileSize(fileUrl: string): number | null {
         try {
             if (!fileUrl) return null;
