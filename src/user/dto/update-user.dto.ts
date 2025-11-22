@@ -28,6 +28,22 @@ export const UpdateUserSchema = z.object({
         .string()
         .max(50, 'Country must not exceed 50 characters')
         .optional(),
+    province: z
+        .string()
+        .max(100)
+        .optional(),
+    city: z
+        .string()
+        .max(100)
+        .optional(),
+    district: z
+        .string()
+        .max(100)
+        .optional(),
+    postal_code: z
+        .string()
+        .max(10)
+        .optional(),
 });
 
 export type UpdateUserDto = z.infer<typeof UpdateUserSchema>;

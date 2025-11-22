@@ -703,14 +703,16 @@ export class OrderService {
 
             // Restore stock
             for (const item of order.items) {
-                await tx.productVariant.update({
-                    where: { id: item.variantId },
-                    data: {
-                        stock: {
-                            increment: item.quantity,
+                if (item.variantId) {
+                    await tx.productVariant.update({
+                        where: { id: item.variantId },
+                        data: {
+                            stock: {
+                                increment: item.quantity,
+                            },
                         },
-                    },
-                });
+                    });
+                }
             }
         });
 
@@ -1043,14 +1045,16 @@ export class OrderService {
             if (['PAID', 'PROCESSING'].includes(order.status)) {
                 await this.prisma.$transaction(async (tx) => {
                     for (const item of order.items) {
-                        await tx.productVariant.update({
-                            where: { id: item.variantId },
-                            data: {
-                                stock: {
-                                    increment: item.quantity,
+                        if (item.variantId) {
+                            await tx.productVariant.update({
+                                where: { id: item.variantId },
+                                data: {
+                                    stock: {
+                                        increment: item.quantity,
+                                    },
                                 },
-                            },
-                        });
+                            });
+                        }
                     }
                 });
             }
