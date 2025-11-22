@@ -567,14 +567,16 @@ export class PaymentService {
 
             // Restore stock
             for (const item of order.items) {
-                await tx.productVariant.update({
-                    where: { id: item.variantId },
-                    data: {
-                        stock: {
-                            increment: item.quantity,
+                if (item.variantId) {
+                    await tx.productVariant.update({
+                        where: { id: item.variantId },
+                        data: {
+                            stock: {
+                                increment: item.quantity,
+                            },
                         },
-                    },
-                });
+                    });
+                }
             }
         });
 

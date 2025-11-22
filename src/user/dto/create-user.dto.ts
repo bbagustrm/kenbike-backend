@@ -27,6 +27,22 @@ export const CreateUserSchema = z.object({
         .string()
         .max(50, 'Country must not exceed 50 characters')
         .optional(),
+    province: z
+        .string()
+        .max(100)
+        .optional(),
+    city: z
+        .string()
+        .max(100)
+        .optional(),
+    district: z
+        .string()
+        .max(100)
+        .optional(),
+    postal_code: z
+        .string()
+        .max(10)
+        .optional(),
     password: z
         .string()
         .min(8, 'Password must be at least 8 characters')
