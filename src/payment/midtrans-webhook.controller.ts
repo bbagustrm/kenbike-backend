@@ -1,6 +1,4 @@
 // src/payment/midtrans-webhook.controller.ts
-// ✅ PRODUCTION-READY: Auto-switches between sandbox and production
-
 import {
     Controller,
     Post,
@@ -13,10 +11,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Public } from '../common/decorators/public.decorator';
 import { MidtransService } from './midtrans.service';
 import { PaymentService } from './payment.service';
 
 @Controller('webhooks/midtrans')
+@Public()
 export class MidtransWebhookController {
     constructor(
         private midtransService: MidtransService,
