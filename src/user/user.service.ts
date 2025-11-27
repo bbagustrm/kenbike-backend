@@ -79,8 +79,9 @@ export class UserService {
                 city: true,
                 district: true,
                 postalCode: true,
+                address: true,
                 createdAt: true,
-                deletedAt: true, // Include deletedAt in response
+                deletedAt: true,
             },
             skip: PaginationUtil.getSkip(validPage, validLimit),
             take: validLimit,
@@ -105,8 +106,9 @@ export class UserService {
             city: user.city,
             district: user.district,
             postal_code: user.postalCode,
+            address: user.address,
             created_at: user.createdAt,
-            deleted_at: user.deletedAt, // Include in response
+            deleted_at: user.deletedAt,
         }));
 
         return {

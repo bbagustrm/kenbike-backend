@@ -44,6 +44,7 @@ export class CartService {
                                 slug: true,
                                 idPrice: true,
                                 enPrice: true,
+                                weight: true,
                                 isActive: true,
                                 deletedAt: true,
                                 images: {
@@ -110,6 +111,7 @@ export class CartService {
                                     slug: true,
                                     idPrice: true,
                                     enPrice: true,
+                                    weight: true,
                                     isActive: true,
                                     deletedAt: true,
                                     images: {
@@ -172,6 +174,7 @@ export class CartService {
                 slug: item.product.slug,
                 idPrice: item.product.idPrice,
                 enPrice: item.product.enPrice,
+                weight: item.product.weight,
                 imageUrl: item.product.images[0]?.imageUrl || null,
                 isActive: item.product.isActive,
                 isDeleted: item.product.deletedAt !== null,
@@ -227,6 +230,7 @@ export class CartService {
                         slug: true,
                         idPrice: true,
                         enPrice: true,
+                        weight: true,
                         isActive: true,
                         deletedAt: true,
                         images: {

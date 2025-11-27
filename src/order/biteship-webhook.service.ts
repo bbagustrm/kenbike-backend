@@ -1,69 +1,125 @@
-// ✅ NEW BITESHIP WEBHOOK SERVICE - Save this as: src/order/biteship-webhook.service.ts
-
-import { Injectable, Inject } from '@nestjs/common';
+// src/order/biteship-webhook.service.ts
+import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
-import { ConfigService } from '@nestjs/config';
-import { OrderService } from './order.service';
+import { PrismaService } from '../common/prisma.service';
 
 @Injectable()
 export class BiteshipWebhookService {
     constructor(
-        private orderService: OrderService,
-        private configService: ConfigService,
+        private prisma: PrismaService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
     /**
-     * Process Biteship webhook event
+     * Process Biteship webhook notification
      */
-    async processWebhook(payload: any) {
-        const { order_id, status, courier, updated_at } = payload;
+    async processWebhook(webhookData: any): Promise<void> {
+        const { order_id, status, courier } = webhookData;
 
-        this.logger.info('🔄 Processing Biteship webhook', {
-            orderId: order_id,
-            status,
-            courier: courier?.name,
-            trackingId: courier?.tracking_id,
-            timestamp: updated_at,
+        // Find order by Biteship order ID
+        const order = await this.prisma.order.findUnique({
+            where: { biteshipOrderId: order_id },
         });
 
-        try {
-            // Delegate to OrderService for processing
-            await this.orderService.processBiteshipWebhook(order_id, status, payload);
-
-            this.logger.info('✅ Webhook processed successfully', {
-                orderId: order_id,
-                status,
+        if (!order) {
+            this.logger.warn('⚠️ Order not found for Biteship order ID', {
+                biteshipOrderId: order_id,
             });
-        } catch (error: any) {
-            this.logger.error('❌ Webhook processing error', {
-                orderId: order_id,
-                error: error.message,
-            });
-            throw error;
+            throw new NotFoundException('Order not found');
         }
+
+        this.logger.info('🔄 Processing Biteship status update', {
+            orderNumber: order.orderNumber,
+            currentStatus: order.status,
+            newBiteshipStatus: status,
+        });
+
+        // Update order based on Biteship status
+        await this.updateOrderStatus(order.id, status, webhookData);
     }
 
     /**
-     * Verify webhook signature (optional security feature)
-     * Uncomment and implement when Biteship provides webhook secret
+     * Update order status based on Biteship status
      */
-    async verifySignature(payload: any, signature: string): Promise<boolean> {
-        try {
-            // Example implementation:
-            // const webhookSecret = this.configService.get<string>('BITESHIP_WEBHOOK_SECRET');
-            // const computedSignature = crypto
-            //     .createHmac('sha256', webhookSecret)
-            //     .update(JSON.stringify(payload))
-            //     .digest('hex');
-            // return computedSignature === signature;
+    private async updateOrderStatus(
+        orderId: string,
+        biteshipStatus: string,
+        webhookData: any,
+    ): Promise<void> {
+        // Map Biteship status to our OrderStatus
+        const statusMap: Record<string, string> = {
+            confirmed: 'SHIPPED', // Order confirmed by Biteship
+            allocated: 'SHIPPED', // Courier allocated
+            picking_up: 'SHIPPED', // Courier on the way to pickup
+            picked: 'SHIPPED', // Package picked up
+            dropping_off: 'SHIPPED', // On the way to deliver
+            on_hold: 'SHIPPED', // Package on hold
+            delivered: 'DELIVERED', // Package delivered ✅
+            cancelled: 'CANCELLED', // Order cancelled
+            rejected: 'CANCELLED', // Rejected by courier
+            courier_not_found: 'FAILED', // No courier found
+            returned: 'CANCELLED', // Returned to sender
+        };
 
-            // For now, return true (no verification)
-            return true;
-        } catch (error) {
-            this.logger.error('Failed to verify webhook signature', { error });
-            return false;
+        const newStatus = statusMap[biteshipStatus];
+
+        if (!newStatus) {
+            this.logger.warn('⚠️ Unknown Biteship status', {
+                biteshipStatus,
+                orderId,
+            });
+            return;
         }
+
+        // Prepare update data
+        const updateData: any = {
+            status: newStatus,
+        };
+
+        // Update tracking number if available
+        if (webhookData.courier?.tracking_id && !updateData.trackingNumber) {
+            updateData.trackingNumber = webhookData.courier.tracking_id;
+        }
+
+        // Set timestamp based on status
+        if (biteshipStatus === 'delivered') {
+            updateData.deliveredAt = new Date();
+        } else if (
+            biteshipStatus === 'cancelled' ||
+            biteshipStatus === 'rejected' ||
+            biteshipStatus === 'returned'
+        ) {
+            updateData.canceledAt = new Date();
+        }
+
+        // Update order
+        await this.prisma.order.update({
+            where: { id: orderId },
+            data: updateData,
+        });
+
+        this.logger.info('✅ Order status updated', {
+            orderId,
+            biteshipStatus,
+            newStatus,
+        });
+
+        // TODO Phase 4: Send email notification to customer
+    }
+
+    /**
+     * Get delivery status history from webhook data
+     */
+    private getDeliveryHistory(webhookData: any): any[] {
+        if (!webhookData.history || !Array.isArray(webhookData.history)) {
+            return [];
+        }
+
+        return webhookData.history.map((item: any) => ({
+            status: item.status,
+            note: item.note,
+            updatedAt: item.updated_at,
+        }));
     }
 }
