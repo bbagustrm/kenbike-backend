@@ -1,5 +1,4 @@
 // src/payment/paypal-webhook.controller.ts
-
 import {
     Controller,
     Post,
@@ -12,10 +11,12 @@ import {
 } from '@nestjs/common';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Public } from '../common/decorators/public.decorator';
 import { PayPalService } from './paypal.service';
 import { PaymentService } from './payment.service';
 
 @Controller('webhooks/paypal')
+@Public()
 export class PayPalWebhookController {
     constructor(
         private paypalService: PayPalService,
