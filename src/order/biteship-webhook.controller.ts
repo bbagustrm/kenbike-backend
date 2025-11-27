@@ -1,19 +1,20 @@
 // src/order/biteship-webhook.controller.ts
-
 import {
     Controller,
     Post,
     Body,
     HttpCode,
     HttpStatus,
-    Inject,
     Get,
+    Inject,
 } from '@nestjs/common';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Public } from '../common/decorators/public.decorator';
 import { BiteshipWebhookService } from './biteship-webhook.service';
 
 @Controller('webhooks/biteship')
+@Public() // ✅ Mark entire controller as public
 export class BiteshipWebhookController {
     constructor(
         private biteshipWebhookService: BiteshipWebhookService,
@@ -35,35 +36,49 @@ export class BiteshipWebhookController {
     }
 
     /**
+     * Biteship webhook handler
      * POST /webhooks/biteship
-     * Handle Biteship webhook events
-     * CRITICAL: Must handle empty body for installation test!
+     *
+     * Handles shipping status updates from Biteship
+     *
+     * Status flow:
+     * - confirmed: Order confirmed by Biteship
+     * - allocated: Courier allocated
+     * - picking_up: Courier on the way to pickup
+     * - picked: Package picked up by courier
+     * - dropping_off: Courier on the way to deliver
+     * - delivered: Package delivered successfully
+     * - cancelled: Order cancelled
+     * - rejected: Order rejected by courier
+     * - returned: Package returned to sender
      */
     @Post()
     @HttpCode(HttpStatus.OK)
     async handleWebhook(@Body() body: any) {
-        // ✅ CRITICAL: Biteship sends empty body for installation test
+        // ✅ Handle empty body for Biteship installation test
         if (!body || Object.keys(body).length === 0) {
-            this.logger.info('📋 Biteship webhook installation test received');
+            this.logger.info('✅ Biteship webhook installation test received (empty body)');
             return {
                 status: 'ok',
                 message: 'Webhook installation successful',
+                timestamp: new Date().toISOString(),
             };
         }
 
-        // Real webhook with data
-        this.logger.info('📨 Biteship webhook received', {
-            orderId: body.order_id || body.id,
+        this.logger.info('📦 Biteship webhook received', {
+            orderId: body.order_id,
             status: body.status,
-            courier: body.courier?.company,
+            courier: body.courier?.name,
+            trackingId: body.courier?.tracking_id,
             timestamp: new Date().toISOString(),
         });
 
         try {
+            // Process webhook
             await this.biteshipWebhookService.processWebhook(body);
 
-            this.logger.info('✅ Biteship webhook processed', {
-                orderId: body.order_id || body.id,
+            this.logger.info('✅ Biteship webhook processed successfully', {
+                orderId: body.order_id,
                 status: body.status,
             });
 
@@ -74,12 +89,16 @@ export class BiteshipWebhookController {
         } catch (error: any) {
             this.logger.error('❌ Failed to process Biteship webhook', {
                 error: error.message,
+                stack: error.stack,
                 body,
             });
 
+            // Return 200 to prevent Biteship from retrying
+            // But log error for investigation
             return {
-                status: 'ok',
-                message: 'Error logged',
+                status: 'error',
+                message: 'Internal server error',
+                error: error.message,
             };
         }
     }

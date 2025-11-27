@@ -16,6 +16,7 @@ import { InternationalShippingService } from './international-shipping.service';
 import { PaginationUtil } from '../utils/pagination.util';
 import { PaymentService } from '../payment/payment.service';
 import { PaymentMethod } from '@prisma/client';
+import { v4 as uuidv4 } from 'uuid';
 import {
     CalculateShippingDto,
     CalculateShippingResponse,
@@ -176,24 +177,9 @@ export class OrderService {
     /**
      * Generate unique order number (format: ORD-YYYYMMDD-XXXX)
      */
-    private async generateOrderNumber(): Promise<string> {
-        const date = new Date();
-        const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-
-        const startOfDay = new Date(date.setHours(0, 0, 0, 0));
-        const endOfDay = new Date(date.setHours(23, 59, 59, 999));
-
-        const count = await this.prisma.order.count({
-            where: {
-                createdAt: {
-                    gte: startOfDay,
-                    lte: endOfDay,
-                },
-            },
-        });
-
-        const sequence = (count + 1).toString().padStart(4, '0');
-        return `ORD-${dateStr}-${sequence}`;
+    private generateOrderNumber(): string {
+        const uniqueId = uuidv4();
+        return `ORD-${uniqueId}`;
     }
 
     /**
