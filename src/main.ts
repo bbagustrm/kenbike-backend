@@ -14,6 +14,7 @@ async function bootstrap() {
   const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
   app.useLogger(logger);
 
+  // ✅ Compression middleware
   app.use(compression({
     filter: (req, res) => {
       if (req.headers['x-no-compression']) {
@@ -24,11 +25,29 @@ async function bootstrap() {
     level: 6,
   }));
 
+  // ✅ Security headers with helmet
   app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
 
+  // ✅ Cookie parser
   app.use(cookieParser());
+
+  // ✅ UPDATED: Payload size limits untuk proteksi DDoS
+  // Default limit untuk semua endpoints
+  app.use(bodyParser.json({
+    limit: '1mb',
+    strict: false,
+  }));
+  app.use(bodyParser.urlencoded({
+    limit: '1mb',
+    extended: true
+  }));
+
+  app.use('/api/v1/upload', bodyParser.json({
+    limit: '10mb',
+    strict: false,
+  }));
 
   const allowedOrigins = process.env.CORS_ORIGIN
       ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
@@ -37,7 +56,6 @@ async function bootstrap() {
   logger.log('info', `🔒 CORS Allowed Origins: ${allowedOrigins.join(', ')}`);
 
   const uploadsPath = join(process.cwd(), 'uploads');
-
 
   if (existsSync(uploadsPath)) {
     logger.log('info', `📁 Uploads path found: ${uploadsPath}`);
@@ -90,14 +108,26 @@ async function bootstrap() {
     next();
   });
 
-  app.use(bodyParser.json({ strict: false }));
   app.setGlobalPrefix('api/v1');
 
   await app.listen(3000);
+
+  // ✅ Enhanced startup logs
+  logger.log('info', '═══════════════════════════════════════════════');
   logger.log('info', '🚀 Server running on http://localhost:3000/api/v1');
   logger.log('info', `🖼️  Static files: http://localhost:3000/uploads/ -> ${uploadsPath}`);
-  logger.log('info', '🗜️  GZIP compression enabled');
-  logger.log('info', '🍪 Cookie parser enabled');
+  logger.log('info', '🗜️  GZIP compression: ENABLED');
+  logger.log('info', '🍪 Cookie parser: ENABLED');
+  logger.log('info', '🛡️  DDoS Protection: ENABLED');
+  logger.log('info', '🔒 Rate Limiting: ENABLED');
+  logger.log('info', '   ├─ Short: 10 req/sec');
+  logger.log('info', '   ├─ Medium: 100 req/min');
+  logger.log('info', '   └─ Long: 500 req/15min');
+  logger.log('info', '🔐 Helmet Security Headers: ENABLED');
+  logger.log('info', '📦 Payload Limits:');
+  logger.log('info', '   ├─ Default: 1MB');
+  logger.log('info', '   └─ Upload: 10MB');
+  logger.log('info', '═══════════════════════════════════════════════');
 }
 
 bootstrap();

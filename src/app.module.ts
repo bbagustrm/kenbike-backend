@@ -6,9 +6,9 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { ProductModule } from './product/product.module';
-import {CategoryModule} from "./category/category.module";
-import {TagModule} from "./tag/tag.module";
-import {PromotionModule} from "./promotion/promotion.module";
+import { CategoryModule } from "./category/category.module";
+import { TagModule } from "./tag/tag.module";
+import { PromotionModule } from "./promotion/promotion.module";
 import { StorageModule } from './common/storage/storage.module';
 import { UploadModule } from './upload/upload.module';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -22,11 +22,21 @@ import { PaymentModule } from './payment/payment.module';
     CommonModule,
     AuthModule,
     UserModule,
-    // Rate Limiting (100 requests per 60 detik per IP)
     ThrottlerModule.forRoot([
       {
-        ttl: 60,
-        limit: 100,
+        name: 'short',
+        ttl: 1000,      // 1 detik
+        limit: 10,      // Max 10 requests per detik per IP
+      },
+      {
+        name: 'medium',
+        ttl: 60000,     // 1 menit (60 detik)
+        limit: 100,     // Max 100 requests per menit per IP
+      },
+      {
+        name: 'long',
+        ttl: 900000,    // 15 menit
+        limit: 500,     // Max 500 requests per 15 menit per IP
       },
     ]),
     ProductModule,
