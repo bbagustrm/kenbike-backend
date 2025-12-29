@@ -1,4 +1,3 @@
-// src/order/biteship-webhook.controller.ts
 import {
     Controller,
     Post,
@@ -10,23 +9,21 @@ import {
 } from '@nestjs/common';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Throttle, SkipThrottle } from '@nestjs/throttler'; // ✅ Import
 import { Public } from '../common/decorators/public.decorator';
 import { BiteshipWebhookService } from './biteship-webhook.service';
 
 @Controller('webhooks/biteship')
-@Public() // ✅ Mark entire controller as public
+@Public()
 export class BiteshipWebhookController {
     constructor(
         private biteshipWebhookService: BiteshipWebhookService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
-    /**
-     * Health check endpoint
-     * GET /webhooks/biteship/health
-     */
     @Get('health')
     @HttpCode(HttpStatus.OK)
+    @SkipThrottle() // ✅ Skip rate limit
     healthCheck() {
         return {
             status: 'ok',
@@ -35,33 +32,26 @@ export class BiteshipWebhookController {
         };
     }
 
-    /**
-     * Biteship webhook handler
-     * POST /webhooks/biteship
-     *
-     * Handles shipping status updates from Biteship
-     *
-     * Status flow:
-     * - confirmed: Order confirmed by Biteship
-     * - allocated: Courier allocated
-     * - picking_up: Courier on the way to pickup
-     * - picked: Package picked up by courier
-     * - dropping_off: Courier on the way to deliver
-     * - delivered: Package delivered successfully
-     * - cancelled: Order cancelled
-     * - rejected: Order rejected by courier
-     * - returned: Package returned to sender
-     */
     @Post()
     @HttpCode(HttpStatus.OK)
+    @Throttle({ short: { limit: 5, ttl: 1000 } }) // ✅ Max 5 req/detik
+    @Throttle({ medium: { limit: 20, ttl: 60000 } }) // ✅ Max 20 req/menit
     async handleWebhook(@Body() body: any) {
-        // ✅ Handle empty body for Biteship installation test
         if (!body || Object.keys(body).length === 0) {
             this.logger.info('✅ Biteship webhook installation test received (empty body)');
             return {
                 status: 'ok',
                 message: 'Webhook installation successful',
                 timestamp: new Date().toISOString(),
+            };
+        }
+
+        // ✅ Validate payload size
+        if (JSON.stringify(body).length > 50000) {
+            this.logger.warn('⚠️ Webhook payload too large');
+            return {
+                status: 'error',
+                message: 'Payload too large',
             };
         }
 
@@ -74,7 +64,6 @@ export class BiteshipWebhookController {
         });
 
         try {
-            // Process webhook
             await this.biteshipWebhookService.processWebhook(body);
 
             this.logger.info('✅ Biteship webhook processed successfully', {
@@ -93,8 +82,6 @@ export class BiteshipWebhookController {
                 body,
             });
 
-            // Return 200 to prevent Biteship from retrying
-            // But log error for investigation
             return {
                 status: 'error',
                 message: 'Internal server error',
