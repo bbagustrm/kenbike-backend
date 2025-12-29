@@ -7,9 +7,10 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { LoginAttemptGuard } from '../common/guards/login-attempt.guard';
 import { APP_GUARD } from '@nestjs/core';
-import {LocalStorageService} from "../common/storage/local-storage.service";
-import {EmailService} from "../common/email.service";
+import { LocalStorageService } from '../common/storage/local-storage.service';
+import { EmailService } from '../common/email.service';
 
 @Module({
   imports: [
@@ -30,17 +31,16 @@ import {EmailService} from "../common/email.service";
     LocalStorageService,
     JwtStrategy,
     EmailService,
-    // Apply JwtAuthGuard globally to all routes
+    LoginAttemptGuard,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
-    // Apply RolesGuard globally (after JwtAuthGuard)
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
     },
   ],
-  exports: [AuthService, JwtStrategy, PassportModule],
+  exports: [AuthService, JwtStrategy, PassportModule, LoginAttemptGuard],
 })
 export class AuthModule {}

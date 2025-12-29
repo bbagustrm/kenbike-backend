@@ -1,4 +1,3 @@
-// src/payment/paypal-webhook.controller.ts
 import {
     Controller,
     Post,
@@ -11,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Throttle, SkipThrottle } from '@nestjs/throttler'; // ✅ Import
 import { Public } from '../common/decorators/public.decorator';
 import { PayPalService } from './paypal.service';
 import { PaymentService } from './payment.service';
@@ -26,6 +26,7 @@ export class PayPalWebhookController {
 
     @Get('health')
     @HttpCode(HttpStatus.OK)
+    @SkipThrottle() // ✅ Skip rate limit
     healthCheck() {
         return {
             status: 'ok',
@@ -34,16 +35,23 @@ export class PayPalWebhookController {
         };
     }
 
-    /**
-     * POST /webhooks/paypal
-     * Handle PayPal webhook events
-     */
     @Post()
     @HttpCode(HttpStatus.OK)
+    @Throttle({ short: { limit: 5, ttl: 1000 } }) // ✅ Max 5 req/detik
+    @Throttle({ medium: { limit: 20, ttl: 60000 } }) // ✅ Max 20 req/menit
     async handleWebhook(
         @Headers() headers: any,
         @Body() event: any,
     ) {
+        // ✅ Validate payload size
+        if (JSON.stringify(event).length > 50000) {
+            this.logger.warn('⚠️ Webhook payload too large');
+            return {
+                status: 'error',
+                message: 'Payload too large',
+            };
+        }
+
         this.logger.info('💳 PayPal webhook received', {
             eventType: event.event_type,
             resourceType: event.resource_type,
@@ -51,14 +59,11 @@ export class PayPalWebhookController {
         });
 
         try {
-            // Handle different event types
             if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
-                // Payment captured successfully
                 const captureId = event.resource.id;
                 const orderId = event.resource.supplementary_data?.related_ids?.order_id;
 
                 if (orderId) {
-                    // Get order details to find our order number
                     const orderDetails = await this.paypalService.getOrderDetails(orderId);
                     const orderNumber = orderDetails.purchase_units[0].reference_id;
 
@@ -74,7 +79,6 @@ export class PayPalWebhookController {
                     });
                 }
             } else if (event.event_type === 'PAYMENT.CAPTURE.DENIED') {
-                // Payment denied
                 const orderId = event.resource.supplementary_data?.related_ids?.order_id;
 
                 if (orderId) {
@@ -108,7 +112,6 @@ export class PayPalWebhookController {
                 event,
             });
 
-            // Return ok to prevent retries
             return {
                 status: 'ok',
                 message: 'Error logged',

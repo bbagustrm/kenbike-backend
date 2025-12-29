@@ -1,4 +1,3 @@
-// src/payment/midtrans-webhook.controller.ts
 import {
     Controller,
     Post,
@@ -11,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { MidtransService } from './midtrans.service';
 import { PaymentService } from './payment.service';
@@ -25,12 +25,9 @@ export class MidtransWebhookController {
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
-    /**
-     * Health check endpoint
-     * GET /webhooks/midtrans/health
-     */
     @Get('health')
     @HttpCode(HttpStatus.OK)
+    @SkipThrottle() // ✅ Skip rate limit untuk health check
     healthCheck() {
         const isMidtransProduction = this.configService.get('MIDTRANS_IS_PRODUCTION') === 'true';
         const isConfigured = this.midtransService.isConfigured();
@@ -45,17 +42,24 @@ export class MidtransWebhookController {
         };
     }
 
-    /**
-     * ✅ PRODUCTION-READY: Midtrans webhook handler
-     * - Sandbox Mode (MIDTRANS_IS_PRODUCTION=false): Skips signature validation for testing
-     * - Production Mode (MIDTRANS_IS_PRODUCTION=true): Validates signature for security
-     *
-     * POST /webhooks/midtrans
-     */
     @Post()
     @HttpCode(HttpStatus.OK)
+    @Throttle({ short: { limit: 5, ttl: 1000 } }) // ✅ Max 5 req/detik untuk webhook
+    @Throttle({ medium: { limit: 20, ttl: 60000 } }) // ✅ Max 20 req/menit
     async handleWebhook(@Body() notification: any) {
-        // Log incoming webhook
+        // ✅ Validate payload size
+        if (JSON.stringify(notification).length > 50000) { // 50KB limit
+            this.logger.warn('⚠️ Webhook payload too large', {
+                size: JSON.stringify(notification).length,
+            });
+            return {
+                status: 'error',
+                code: 413,
+                message: 'Payload too large',
+            };
+        }
+
+        // ... rest of your existing code
         this.logger.info('📨 Midtrans webhook received', {
             orderId: notification.order_id,
             transactionStatus: notification.transaction_status,
@@ -66,7 +70,6 @@ export class MidtransWebhookController {
         });
 
         try {
-            // ✅ Check if using Production or Sandbox Midtrans
             const isMidtransProduction = this.configService.get('MIDTRANS_IS_PRODUCTION') === 'true';
 
             this.logger.info('🔍 Midtrans mode check', {
@@ -75,9 +78,7 @@ export class MidtransWebhookController {
                 signatureValidation: isMidtransProduction ? 'ENABLED' : 'DISABLED',
             });
 
-            // ✅ Signature validation logic
             if (isMidtransProduction) {
-                // PRODUCTION MIDTRANS: Validate signature for security
                 this.logger.info('🔐 Production Midtrans: Validating signature');
 
                 const isValidSignature = await this.midtransService.verifySignature(notification);
@@ -99,7 +100,6 @@ export class MidtransWebhookController {
 
                 this.logger.info('✅ Signature verified successfully');
             } else {
-                // SANDBOX MIDTRANS: Skip signature validation for testing
                 this.logger.info('⚠️ SANDBOX MODE: Skipping signature validation', {
                     orderId: notification.order_id,
                     message: 'Signature check bypassed for sandbox testing',
@@ -107,16 +107,12 @@ export class MidtransWebhookController {
                 });
             }
 
-            // Extract webhook data
             const orderNumber = notification.order_id;
             const transactionStatus = notification.transaction_status;
             const fraudStatus = notification.fraud_status;
             const transactionId = notification.transaction_id;
 
-            // Process based on transaction status
-            // Ref: https://docs.midtrans.com/en/after-payment/http-notification
             if (transactionStatus === 'capture') {
-                // For credit card transactions
                 if (fraudStatus === 'accept') {
                     await this.paymentService.handlePaymentSuccess(orderNumber, 'MIDTRANS', {
                         transaction_id: transactionId,
@@ -130,9 +126,7 @@ export class MidtransWebhookController {
                         orderNumber,
                         fraudStatus,
                     });
-                    // Don't update order - wait for manual review
                 } else {
-                    // fraud_status = 'deny'
                     await this.paymentService.handlePaymentFailed(
                         orderNumber,
                         'MIDTRANS',
@@ -141,7 +135,6 @@ export class MidtransWebhookController {
                     this.logger.info('❌ Payment denied due to fraud', { orderNumber });
                 }
             } else if (transactionStatus === 'settlement') {
-                // Payment successful (non-card transactions like bank transfer, e-wallet)
                 await this.paymentService.handlePaymentSuccess(orderNumber, 'MIDTRANS', {
                     transaction_id: transactionId,
                     payment_type: notification.payment_type,
@@ -153,14 +146,11 @@ export class MidtransWebhookController {
                     paymentType: notification.payment_type,
                 });
             } else if (transactionStatus === 'pending') {
-                // Payment pending (e.g., waiting for bank transfer)
                 this.logger.info('⏳ Payment pending', {
                     orderNumber,
                     paymentType: notification.payment_type,
                 });
-                // No action needed - order stays in PENDING status
             } else if (transactionStatus === 'deny') {
-                // Payment denied by bank/payment gateway
                 await this.paymentService.handlePaymentFailed(
                     orderNumber,
                     'MIDTRANS',
@@ -168,14 +158,12 @@ export class MidtransWebhookController {
                 );
                 this.logger.info('❌ Payment denied by bank', { orderNumber });
             } else if (transactionStatus === 'cancel' || transactionStatus === 'expire') {
-                // Payment cancelled by user or expired
                 await this.paymentService.handlePaymentExpired(orderNumber, 'MIDTRANS');
                 this.logger.info('❌ Payment cancelled/expired', {
                     orderNumber,
                     status: transactionStatus,
                 });
             } else {
-                // Unknown status - log for investigation
                 this.logger.warn('⚠️ Unknown transaction status received', {
                     orderNumber,
                     transactionStatus,
@@ -195,8 +183,6 @@ export class MidtransWebhookController {
                 notification,
             });
 
-            // Return 200 to prevent Midtrans from retrying
-            // But log error for investigation
             return {
                 status: 'error',
                 code: 500,
