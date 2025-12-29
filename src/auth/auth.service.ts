@@ -21,6 +21,7 @@ import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import {LocalStorageService} from "../common/storage/local-storage.service";
 import { Request } from 'express';
 import {EmailService} from "../common/email.service";
+import {LoginAttemptGuard} from "../common/guards/login-attempt.guard";
 
 @Injectable()
 export class AuthService {
@@ -29,6 +30,7 @@ export class AuthService {
         private localStorageService: LocalStorageService,
         private configService: ConfigService,
         private emailService: EmailService,
+        private loginAttemptGuard: LoginAttemptGuard,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
@@ -157,19 +159,56 @@ export class AuthService {
     /**
      * Login user
      */
-    async login(dto: LoginDto) {
+    async login(dto: LoginDto, req: Request) {
+        const ip = this.getClientIp(req);
+
         // Find user by email
         const user = await this.prisma.user.findUnique({
             where: { email: dto.email },
         });
 
         if (!user || user.deletedAt) {
-            throw new UnauthorizedException('Invalid email or password');
+            // ✅ Record failed attempt
+            const attemptResult = this.loginAttemptGuard.recordFailedAttempt(ip, dto.email);
+
+            if (attemptResult.isLocked) {
+                throw new UnauthorizedException({
+                    statusCode: 429, // ✅ Add statusCode
+                    message: 'Too many failed login attempts. Account temporarily locked.',
+                    error: 'Account Locked', // ✅ Add error field
+                    remainingAttempts: 0,
+                    lockedUntil: attemptResult.lockedUntil,
+                });
+            }
+
+            throw new UnauthorizedException({
+                statusCode: 401, // ✅ Add statusCode
+                message: 'Invalid email or password',
+                error: 'Unauthorized', // ✅ Add error field
+                remainingAttempts: attemptResult.remainingAttempts, // ✅ This will show now
+            });
         }
 
         // Check if user is active
         if (!user.isActive) {
-            throw new UnauthorizedException('Account has been suspended');
+            const attemptResult = this.loginAttemptGuard.recordFailedAttempt(ip, dto.email);
+
+            if (attemptResult.isLocked) {
+                throw new UnauthorizedException({
+                    statusCode: 429,
+                    message: 'Too many failed login attempts. Account temporarily locked.',
+                    error: 'Account Locked',
+                    remainingAttempts: 0,
+                    lockedUntil: attemptResult.lockedUntil,
+                });
+            }
+
+            throw new UnauthorizedException({
+                statusCode: 401,
+                message: 'Account has been suspended',
+                error: 'Account Suspended',
+                remainingAttempts: attemptResult.remainingAttempts,
+            });
         }
 
         // Verify password
@@ -179,10 +218,30 @@ export class AuthService {
         );
 
         if (!isPasswordValid) {
-            throw new UnauthorizedException('Invalid email or password');
+            const attemptResult = this.loginAttemptGuard.recordFailedAttempt(ip, dto.email);
+
+            if (attemptResult.isLocked) {
+                throw new UnauthorizedException({
+                    statusCode: 429,
+                    message: 'Too many failed login attempts. Account temporarily locked.',
+                    error: 'Account Locked',
+                    remainingAttempts: 0,
+                    lockedUntil: attemptResult.lockedUntil,
+                });
+            }
+
+            throw new UnauthorizedException({
+                statusCode: 401,
+                message: 'Invalid email or password',
+                error: 'Unauthorized',
+                remainingAttempts: attemptResult.remainingAttempts,
+            });
         }
 
-        // Generate tokens
+        // ✅ Login successful - Reset attempts
+        this.loginAttemptGuard.resetAttempts(ip, dto.email);
+
+        // ... rest of the code (token generation, etc.) stays the same
         const payload: JwtPayload = {
             id: user.id,
             email: user.email,
@@ -195,7 +254,6 @@ export class AuthService {
         const accessToken = TokenUtil.generateAccessToken(payload, jwtSecret, accessTokenExpiry);
         const refreshToken = TokenUtil.generateRefreshToken(payload, jwtSecret, refreshTokenExpiry);
 
-        // Save refresh token to database
         await this.prisma.refreshToken.create({
             data: {
                 token: refreshToken,
@@ -204,13 +262,12 @@ export class AuthService {
             },
         });
 
-        // Update last login
         await this.prisma.user.update({
             where: { id: user.id },
             data: { lastLogin: new Date() },
         });
 
-        this.logger.info(`User logged in: ${user.email}`);
+        this.logger.info(`User logged in: ${user.email} from ${ip}`);
 
         return {
             message: 'Login successful',
@@ -218,7 +275,7 @@ export class AuthService {
                 access_token: accessToken,
                 refresh_token: refreshToken,
                 token_type: 'Bearer',
-                expires_in: 900, // 15 minutes in seconds
+                expires_in: 900,
                 user: {
                     id: user.id,
                     email: user.email,
@@ -227,6 +284,24 @@ export class AuthService {
                 },
             },
         };
+    }
+
+    /**
+     * Extract client IP from request
+     */
+    private getClientIp(req: Request): string {
+        const forwardedFor = req.headers['x-forwarded-for'];
+        if (forwardedFor) {
+            const ips = (forwardedFor as string).split(',');
+            return ips[0].trim();
+        }
+
+        const realIp = req.headers['x-real-ip'];
+        if (realIp) {
+            return realIp as string;
+        }
+
+        return req.socket.remoteAddress || 'unknown';
     }
 
     /**
