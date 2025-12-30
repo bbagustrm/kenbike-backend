@@ -24,7 +24,6 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { LoginAttemptGuard } from '../common/guards/login-attempt.guard';
 import { FileUploadUtil } from '../utils/file-upload.util';
 import { Throttle } from '@nestjs/throttler';
-import { SkipThrottle } from '@nestjs/throttler';
 import { RegisterDto, RegisterSchema } from './dto/register.dto';
 import { LoginDto, LoginSchema } from './dto/login.dto';
 import { ForgotPasswordDto, ForgotPasswordSchema } from './dto/forgot-password.dto';
@@ -72,7 +71,6 @@ export class AuthController {
 
     @Public()
     @UseGuards(LoginAttemptGuard)
-    @SkipThrottle()
     @Post('login')
     @HttpCode(HttpStatus.OK)
     async login(
