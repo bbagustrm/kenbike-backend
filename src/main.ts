@@ -32,6 +32,7 @@ async function bootstrap() {
 
   // ✅ Cookie parser
   app.use(cookieParser());
+  app.set('trust proxy', 1);
 
   // ✅ UPDATED: Payload size limits untuk proteksi DDoS
   // Default limit untuk semua endpoints
