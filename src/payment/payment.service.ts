@@ -42,6 +42,7 @@ export class PaymentService {
 
     /**
      * Create payment for an order
+     * ✅ FIXED: Return existing token if still valid, or create new one
      */
     async createPayment(userId: string, dto: CreatePaymentDto): Promise<PaymentResponse> {
         const { order_number, payment_method } = dto;
@@ -77,9 +78,72 @@ export class PaymentService {
             );
         }
 
-        // Check if order already has a payment
+        // ✅ NEW: Check if order already has a payment token
         if (order.paymentId) {
-            throw new BadRequestException('Order already has a payment. Please check payment status.');
+            // Check if payment is still valid (within 24 hours for Midtrans, 3 hours for PayPal)
+            const paymentCreatedAt = order.updatedAt || order.createdAt;
+            const now = new Date();
+            const hoursSinceCreation = (now.getTime() - paymentCreatedAt.getTime()) / (1000 * 60 * 60);
+
+            const expiryHours = order.paymentMethod === 'PAYPAL' ? 3 : 24;
+
+            if (hoursSinceCreation < expiryHours) {
+                this.logger.info('♻️ Returning existing payment token', {
+                    orderNumber: order_number,
+                    paymentMethod: order.paymentMethod,
+                    hoursRemaining: Math.round(expiryHours - hoursSinceCreation),
+                });
+
+                // Return existing token
+                if (order.paymentMethod === 'MIDTRANS_SNAP') {
+                    return {
+                        success: true,
+                        message: 'Payment already created. Using existing token.',
+                        data: {
+                            order_number: order.orderNumber,
+                            payment_method: 'MIDTRANS_SNAP',
+                            payment_url: `https://app.sandbox.midtrans.com/snap/v4/redirection/${order.paymentId}`,
+                            token: order.paymentId,
+                            expires_at: new Date(paymentCreatedAt.getTime() + 24 * 60 * 60 * 1000),
+                        },
+                    };
+                } else if (order.paymentMethod === 'PAYPAL') {
+                    // For PayPal, we need to get the approval URL again
+                    // Since we don't store it, create new payment
+                    this.logger.info('🔄 PayPal payment exists but need new approval URL');
+                }
+            } else {
+                // Token expired, clear it and create new one
+                this.logger.info('⏰ Payment token expired, creating new one', {
+                    orderNumber: order_number,
+                    hoursSinceCreation: Math.round(hoursSinceCreation),
+                });
+
+                await this.prisma.order.update({
+                    where: { id: order.id },
+                    data: {
+                        paymentId: null,
+                        paymentMethod: null,
+                        paymentProvider: null,
+                    },
+                });
+
+                // Reload order after clearing payment info
+                const updatedOrder = await this.prisma.order.findUnique({
+                    where: { orderNumber: order_number },
+                    include: {
+                        items: true,
+                        user: true,
+                    },
+                });
+
+                // Create payment based on method with updated order
+                if (payment_method === 'MIDTRANS_SNAP') {
+                    return await this.createMidtransPayment(updatedOrder);
+                } else if (payment_method === 'PAYPAL') {
+                    return await this.createPayPalPayment(updatedOrder);
+                }
+            }
         }
 
         // Create payment based on method
@@ -291,8 +355,8 @@ export class PaymentService {
                 brand_name: 'KenBike',
                 landing_page: 'NO_PREFERENCE',
                 user_action: 'PAY_NOW',
-                return_url: `${this.frontendUrl}/orders/${order.orderNumber}?payment=success`,
-                cancel_url: `${this.frontendUrl}/orders/${order.orderNumber}?payment=cancelled`,
+                return_url: `${this.frontendUrl}/user/orders/${order.orderNumber}?payment=success`,
+                cancel_url: `${this.frontendUrl}/user/orders/${order.orderNumber}?payment=cancelled`,
             },
         };
 
@@ -492,6 +556,12 @@ export class PaymentService {
             return;
         }
 
+        // ✅ IMPORTANT: Call OrderService.markOrderAsPaid()
+        // This will update order status to PAID AND create Biteship order
+        // We inject OrderService but need to avoid circular dependency
+
+        // For now, just update status directly
+        // OrderService.markOrderAsPaid() will be called from webhook controller
         await this.prisma.order.update({
             where: { id: order.id },
             data: {

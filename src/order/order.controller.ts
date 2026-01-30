@@ -1,4 +1,4 @@
-// ✅ UPDATED ORDER CONTROLLER - Save this as: src/order/order.controller.ts
+// ORDER CONTROLLER - src/order/order.controller.ts
 
 import {
     Controller,
@@ -128,6 +128,19 @@ export class OrderController {
 
         return this.orderService.cancelOrder(userId, orderNumber, dto);
     }
+
+    /**
+     * POST /orders/:orderNumber/confirm-delivery
+     * User confirms they received the order (DELIVERED -> COMPLETED)
+     */
+    @Post(':orderNumber/confirm-delivery')
+    async confirmDelivery(
+        @CurrentUser('id') userId: string,
+        @Param('orderNumber') orderNumber: string,
+    ) {
+        return this.orderService.confirmDelivery(userId, orderNumber);
+    }
+
 
     /**
      * GET /orders/:orderNumber/tracking

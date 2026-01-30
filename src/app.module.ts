@@ -15,6 +15,12 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { CartModule } from './cart/cart.module';
 import { OrderModule } from './order/order.module';
 import { PaymentModule } from './payment/payment.module';
+import { InvoiceModule } from './invoice/invoice.module';
+import { DiscussionController } from './discussion/discussion.controller';
+import { DiscussionService } from './discussion/discussion.service';
+import { DiscussionModule } from './discussion/discussion.module';
+import {ReviewModule} from "./review/review.module";
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -48,13 +54,18 @@ import { PaymentModule } from './payment/payment.module';
     CartModule,
     OrderModule,
     PaymentModule,
+    InvoiceModule,
+    ReviewModule,
+    DiscussionModule,
+    NotificationModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, DiscussionController],
   providers: [
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
+    DiscussionService,
   ],
 })
 export class AppModule {}

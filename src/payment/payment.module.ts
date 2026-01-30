@@ -1,5 +1,6 @@
 // src/payment/payment.module.ts
-import { Module, forwardRef } from '@nestjs/common';
+
+import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PaymentController } from './payment.controller';
 import { MidtransWebhookController } from './midtrans-webhook.controller';
@@ -9,11 +10,12 @@ import { MidtransService } from './midtrans.service';
 import { PayPalService } from './paypal.service';
 import { PrismaService } from '../common/prisma.service';
 import { ValidationService } from '../common/validation.service';
+import { OrderModule } from '../order/order.module';
 
 @Module({
     imports: [
         ConfigModule,
-        forwardRef(() => PaymentModule), // This should be removed or changed
+        OrderModule,
     ],
     controllers: [
         PaymentController,
@@ -27,6 +29,10 @@ import { ValidationService } from '../common/validation.service';
         PrismaService,
         ValidationService,
     ],
-    exports: [PaymentService], // ✅ MUST export PaymentService
+    exports: [
+        PaymentService, // Export for OrderModule if needed
+        MidtransService,
+        PayPalService,
+    ],
 })
 export class PaymentModule {}

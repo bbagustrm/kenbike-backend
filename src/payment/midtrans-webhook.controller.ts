@@ -1,3 +1,5 @@
+// src/payment/midtrans-webhook.controller.ts
+
 import {
     Controller,
     Post,
@@ -13,21 +15,21 @@ import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { MidtransService } from './midtrans.service';
-import { PaymentService } from './payment.service';
+import { OrderService } from '../order/order.service';
 
 @Controller('webhooks/midtrans')
 @Public()
 export class MidtransWebhookController {
     constructor(
         private midtransService: MidtransService,
-        private paymentService: PaymentService,
+        private orderService: OrderService,
         private configService: ConfigService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
     @Get('health')
     @HttpCode(HttpStatus.OK)
-    @SkipThrottle() // ✅ Skip rate limit untuk health check
+    @SkipThrottle()
     healthCheck() {
         const isMidtransProduction = this.configService.get('MIDTRANS_IS_PRODUCTION') === 'true';
         const isConfigured = this.midtransService.isConfigured();
@@ -44,11 +46,11 @@ export class MidtransWebhookController {
 
     @Post()
     @HttpCode(HttpStatus.OK)
-    @Throttle({ short: { limit: 5, ttl: 1000 } }) // ✅ Max 5 req/detik untuk webhook
-    @Throttle({ medium: { limit: 20, ttl: 60000 } }) // ✅ Max 20 req/menit
+    @Throttle({ short: { limit: 5, ttl: 1000 } })
+    @Throttle({ medium: { limit: 20, ttl: 60000 } })
     async handleWebhook(@Body() notification: any) {
-        // ✅ Validate payload size
-        if (JSON.stringify(notification).length > 50000) { // 50KB limit
+        // Validate payload size
+        if (JSON.stringify(notification).length > 50000) {
             this.logger.warn('⚠️ Webhook payload too large', {
                 size: JSON.stringify(notification).length,
             });
@@ -59,7 +61,6 @@ export class MidtransWebhookController {
             };
         }
 
-        // ... rest of your existing code
         this.logger.info('📨 Midtrans webhook received', {
             orderId: notification.order_id,
             transactionStatus: notification.transaction_status,
@@ -112,35 +113,26 @@ export class MidtransWebhookController {
             const fraudStatus = notification.fraud_status;
             const transactionId = notification.transaction_id;
 
+            // ✅ Handle payment status
             if (transactionStatus === 'capture') {
                 if (fraudStatus === 'accept') {
-                    await this.paymentService.handlePaymentSuccess(orderNumber, 'MIDTRANS', {
-                        transaction_id: transactionId,
-                        payment_type: notification.payment_type,
-                        transaction_time: notification.transaction_time,
-                        fraud_status: fraudStatus,
-                    });
+                    // ✅ Payment success - mark as paid + create Biteship
+                    await this.orderService.markOrderAsPaid(orderNumber);
                     this.logger.info('✅ Payment captured (credit card)', { orderNumber });
                 } else if (fraudStatus === 'challenge') {
                     this.logger.info('⚠️ Payment challenge - manual review required', {
                         orderNumber,
                         fraudStatus,
                     });
+                    // Keep order as PENDING until manual review
                 } else {
-                    await this.paymentService.handlePaymentFailed(
-                        orderNumber,
-                        'MIDTRANS',
-                        'Fraud detected',
-                    );
+                    // ✅ FIXED: Mark order as FAILED (fraud detected)
+                    await this.orderService.markOrderAsFailed(orderNumber, 'Fraud detected');
                     this.logger.info('❌ Payment denied due to fraud', { orderNumber });
                 }
             } else if (transactionStatus === 'settlement') {
-                await this.paymentService.handlePaymentSuccess(orderNumber, 'MIDTRANS', {
-                    transaction_id: transactionId,
-                    payment_type: notification.payment_type,
-                    transaction_time: notification.transaction_time,
-                    settlement_time: notification.settlement_time,
-                });
+                // ✅ Payment success - mark as paid + create Biteship
+                await this.orderService.markOrderAsPaid(orderNumber);
                 this.logger.info('✅ Payment settled successfully', {
                     orderNumber,
                     paymentType: notification.payment_type,
@@ -150,19 +142,18 @@ export class MidtransWebhookController {
                     orderNumber,
                     paymentType: notification.payment_type,
                 });
+                // Order stays PENDING - no action needed
             } else if (transactionStatus === 'deny') {
-                await this.paymentService.handlePaymentFailed(
-                    orderNumber,
-                    'MIDTRANS',
-                    'Payment denied by bank',
-                );
+                // ✅ FIXED: Mark order as FAILED (payment denied)
+                await this.orderService.markOrderAsFailed(orderNumber, 'Payment denied by bank');
                 this.logger.info('❌ Payment denied by bank', { orderNumber });
             } else if (transactionStatus === 'cancel' || transactionStatus === 'expire') {
-                await this.paymentService.handlePaymentExpired(orderNumber, 'MIDTRANS');
-                this.logger.info('❌ Payment cancelled/expired', {
+                // ✅ Payment cancelled/expired - will be handled by expiry CRON
+                this.logger.info('⏳ Payment cancelled/expired - will be handled by CRON', {
                     orderNumber,
                     status: transactionStatus,
                 });
+                // Order stays PENDING - expiry CRON will cancel it and restore stock
             } else {
                 this.logger.warn('⚠️ Unknown transaction status received', {
                     orderNumber,

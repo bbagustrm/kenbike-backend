@@ -1,7 +1,9 @@
+// src/order/dto/create-order.dto.ts
+
 import { z } from 'zod';
 
 /**
- * DTO for creating order from cart
+ * ✅ FIXED: DTO for creating order from cart (REMOVED payment_method)
  */
 export const CreateOrderSchema = z.object({
     // Shipping destination
@@ -25,8 +27,8 @@ export const CreateOrderSchema = z.object({
     // For INTERNATIONAL shipping
     shipping_zone_id: z.string().uuid().optional(),
 
-    // Payment method (for now, just store, actual payment in Phase 3)
-    payment_method: z.enum(['MIDTRANS_SNAP', 'PAYPAL', 'MANUAL']).optional(),
+    // ❌ REMOVED: payment_method field
+    // Payment method will be specified in POST /payment/create instead
 
     // Currency (default IDR)
     currency: z.enum(['IDR', 'USD']).default('IDR'),
@@ -57,36 +59,39 @@ export type CreateOrderDto = z.infer<typeof CreateOrderSchema>;
 /**
  * Response type for order creation
  */
+/**
+ * Response type for order creation (snake_case for API consistency)
+ */
 export interface CreateOrderResponse {
     message: string;
     data: {
         id: string;
-        orderNumber: string;
+        order_number: string;
         status: string;
         subtotal: number;
         discount: number;
         tax: number;
-        shippingCost: number;
+        shipping_cost: number;
         total: number;
         currency: string;
         items: Array<{
-            productName: string;
-            variantName: string;
+            product_name: string;
+            variant_name: string;
             quantity: number;
-            pricePerItem: number;
+            price_per_item: number;
             subtotal: number;
         }>;
         shipping: {
             type: string;
             method: string;
-            recipientName: string;
-            recipientPhone: string;
+            recipient_name: string;
+            recipient_phone: string;
             address: string;
             city: string;
             country: string;
-            postalCode: string;
+            postal_code: string;
         };
-        paymentMethod?: string;
-        createdAt: Date;
+        payment_method?: string;
+        created_at: Date;
     };
 }
