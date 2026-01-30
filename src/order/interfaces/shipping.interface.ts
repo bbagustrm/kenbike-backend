@@ -1,3 +1,5 @@
+// src/order/interfaces/shipping.interface.ts
+
 // ============================================
 // BITESHIP TYPES
 // ============================================
@@ -49,7 +51,7 @@ export interface BiteshipRatesResponse {
 }
 
 /**
- * ✅ NEW: Biteship Create Order Request
+ * Biteship Create Order Request
  */
 export interface BiteshipOrderRequest {
     // Origin (warehouse/store)
@@ -91,7 +93,7 @@ export interface BiteshipOrderRequest {
 }
 
 /**
- * ✅ NEW: Biteship Create Order Response
+ * Biteship Create Order Response
  */
 export interface BiteshipOrderResponse {
     success: boolean;
@@ -129,7 +131,7 @@ export interface BiteshipOrderResponse {
 }
 
 /**
- * ✅ NEW: Biteship Tracking Response
+ * Biteship Tracking Response
  */
 export interface BiteshipTrackingResponse {
     success: boolean;
@@ -155,12 +157,16 @@ export interface BiteshipTrackingResponse {
 // INTERNATIONAL SHIPPING TYPES
 // ============================================
 
+/**
+ * International Shipping Zone
+ * Pricing is in USD (float)
+ */
 export interface InternationalShippingZone {
     id: string;
     name: string;
     countries: string[]; // Array of country codes
-    baseRate: number;
-    perKgRate: number;
+    baseRate: number; // USD (e.g., 15.00)
+    perKgRate: number; // USD per kg (e.g., 5.00)
     minDays: number;
     maxDays: number;
 }
