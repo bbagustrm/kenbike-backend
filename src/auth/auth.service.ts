@@ -552,9 +552,6 @@ export class AuthService {
 
     /**
      * Update user profile
-     */
-    /**
-     * Update user profile
      * @param userId - User ID
      * @param dto - Update profile DTO
      * @param file - Optional profile image file
@@ -604,18 +601,51 @@ export class AuthService {
             }
         }
 
+        // Log incoming data for debugging
+        this.logger.info('📝 Update profile DTO:', {
+            phone_number: dto.phone_number,
+            country: dto.country,
+            province: dto.province,
+            city: dto.city,
+            district: dto.district,
+            postal_code: dto.postal_code,
+            address: dto.address,
+        });
+
+        // Build update data - handle empty strings as null
+        const updateData: any = {};
+
+        if (dto.phone_number !== undefined) {
+            updateData.phoneNumber = dto.phone_number || null;
+        }
+        if (dto.country !== undefined) {
+            updateData.country = dto.country; // Country should always have a value (2-char code)
+        }
+        if (dto.province !== undefined) {
+            updateData.province = dto.province || null;
+        }
+        if (dto.city !== undefined) {
+            updateData.city = dto.city || null;
+        }
+        if (dto.district !== undefined) {
+            updateData.district = dto.district || null;
+        }
+        if (dto.postal_code !== undefined) {
+            updateData.postalCode = dto.postal_code || null;
+        }
+        if (dto.address !== undefined) {
+            updateData.address = dto.address || null;
+        }
+        if (profileImageUrl) {
+            updateData.profileImage = profileImageUrl;
+        }
+
+        this.logger.info('📝 Prisma update data:', updateData);
+
         // Update user in database
         const user = await this.prisma.user.update({
             where: { id: userId },
-            data: {
-                ...(dto.phone_number !== undefined && { phoneNumber: dto.phone_number }),
-                ...(dto.address !== undefined && { address: dto.address }),
-                ...(dto.country !== undefined && { country: dto.country }),
-                ...(dto.city !== undefined && { city: dto.city }),
-                ...(dto.province !== undefined && { province: dto.province }),
-                ...(dto.postal_code !== undefined && { postalCode: dto.postal_code }),
-                ...(profileImageUrl && { profileImage: profileImageUrl }),
-            },
+            data: updateData,
             select: {
                 id: true,
                 phoneNumber: true,
@@ -704,7 +734,12 @@ export class AuthService {
             throw new NotFoundException('No profile image to delete');
         }
 
-        // TODO: Delete file from storage
+        // Delete file from storage
+        try {
+            await this.localStorageService.deleteImage(user.profileImage);
+        } catch (error) {
+            this.logger.warn('Failed to delete profile image from storage:', error);
+        }
 
         await this.prisma.user.update({
             where: { id: userId },

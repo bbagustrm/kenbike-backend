@@ -1,5 +1,8 @@
+// src/user/dto/create-user.dto.ts
+
 import { z } from 'zod';
 import { Role } from '@prisma/client';
+import { SUPPORTED_COUNTRIES } from '../../common/constants/countries';
 
 export const CreateUserSchema = z.object({
     first_name: z
@@ -22,27 +25,33 @@ export const CreateUserSchema = z.object({
     phone_number: z
         .string()
         .regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format')
-        .optional(),
+        .optional()
+        .nullable(),
     country: z
-        .string()
-        .max(50, 'Country must not exceed 50 characters')
-        .optional(),
+        .enum(SUPPORTED_COUNTRIES, {
+            message: 'Invalid country code. Must be 2-character ISO code (e.g., ID, SG, MY)'
+        })
+        .default('ID'),
     province: z
         .string()
-        .max(100)
-        .optional(),
+        .max(100, 'Province must not exceed 100 characters')
+        .optional()
+        .nullable(),
     city: z
         .string()
-        .max(100)
-        .optional(),
+        .max(100, 'City must not exceed 100 characters')
+        .optional()
+        .nullable(),
     district: z
         .string()
-        .max(100)
-        .optional(),
+        .max(100, 'District must not exceed 100 characters')
+        .optional()
+        .nullable(),
     postal_code: z
         .string()
-        .max(10)
-        .optional(),
+        .max(10, 'Postal code must not exceed 10 characters')
+        .optional()
+        .nullable(),
     password: z
         .string()
         .min(8, 'Password must be at least 8 characters')
@@ -52,8 +61,9 @@ export const CreateUserSchema = z.object({
         .regex(/[!@#$%^&*]/, 'Password must contain at least one special character (!@#$%^&*)'),
     address: z
         .string()
-        .max(255, 'Address must not exceed 255 characters')
-        .optional(),
+        .max(500, 'Address must not exceed 500 characters')
+        .optional()
+        .nullable(),
     role: z.nativeEnum(Role).default(Role.USER),
 });
 

@@ -1,5 +1,6 @@
 // src/order/order.module.ts
-import { Module, forwardRef } from '@nestjs/common'; // ✅ ADD forwardRef
+
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { OrderController } from './order.controller';
@@ -10,15 +11,16 @@ import { BiteshipService } from './biteship.service';
 import { InternationalShippingService } from './international-shipping.service';
 import { BiteshipWebhookService } from './biteship-webhook.service';
 import { OrderCompletionCron } from './cron/order-completion.cron';
+import { OrderExpiryCron } from './cron/order-expiry.cron';
 import { PrismaService } from '../common/prisma.service';
 import { ValidationService } from '../common/validation.service';
-import { PaymentModule } from '../payment/payment.module'; // ✅ ADD
+import { InvoiceModule } from '../invoice/invoice.module';
 
 @Module({
   imports: [
+    InvoiceModule,
     ConfigModule,
     ScheduleModule.forRoot(),
-    forwardRef(() => PaymentModule), // ✅ ADD - Import PaymentModule dengan forwardRef
   ],
   controllers: [
     OrderController,
@@ -31,9 +33,14 @@ import { PaymentModule } from '../payment/payment.module'; // ✅ ADD
     InternationalShippingService,
     BiteshipWebhookService,
     OrderCompletionCron,
+    OrderExpiryCron,
     PrismaService,
     ValidationService,
   ],
-  exports: [OrderService, BiteshipService],
+  exports: [
+    OrderService,
+    BiteshipService,
+    InternationalShippingService,
+  ],
 })
 export class OrderModule {}

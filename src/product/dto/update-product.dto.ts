@@ -69,7 +69,7 @@ export const UpdateProductSchema = z.object({
 
     // Pricing
     idPrice: z.number().int().min(0).optional(),
-    enPrice: z.number().int().min(0).optional(),
+    enPrice: z.number().min(0).optional(), // ✅ Changed: removed .int() for USD float
 
     // Images
     imageUrls: z

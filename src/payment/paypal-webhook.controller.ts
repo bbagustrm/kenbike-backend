@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
-import { Throttle, SkipThrottle } from '@nestjs/throttler'; // ✅ Import
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { PayPalService } from './paypal.service';
 import { PaymentService } from './payment.service';

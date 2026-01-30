@@ -73,7 +73,7 @@ export const CreateProductSchema = z.object({
 
     // Pricing
     idPrice: z.number().int().min(0, 'Indonesian price must be at least 0'),
-    enPrice: z.number().int().min(0, 'English price must be at least 0'),
+    enPrice: z.number().min(0, 'USD price must be at least 0'),
 
     // Images
     imageUrls: z

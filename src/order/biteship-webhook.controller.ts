@@ -1,3 +1,4 @@
+// src/order/biteship-webhook.controller.ts
 import {
     Controller,
     Post,
@@ -9,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
-import { Throttle, SkipThrottle } from '@nestjs/throttler'; // ✅ Import
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { BiteshipWebhookService } from './biteship-webhook.service';
 
@@ -23,7 +24,7 @@ export class BiteshipWebhookController {
 
     @Get('health')
     @HttpCode(HttpStatus.OK)
-    @SkipThrottle() // ✅ Skip rate limit
+    @SkipThrottle()
     healthCheck() {
         return {
             status: 'ok',
@@ -34,8 +35,8 @@ export class BiteshipWebhookController {
 
     @Post()
     @HttpCode(HttpStatus.OK)
-    @Throttle({ short: { limit: 5, ttl: 1000 } }) // ✅ Max 5 req/detik
-    @Throttle({ medium: { limit: 20, ttl: 60000 } }) // ✅ Max 20 req/menit
+    @Throttle({ short: { limit: 5, ttl: 1000 } })
+    @Throttle({ medium: { limit: 20, ttl: 60000 } })
     async handleWebhook(@Body() body: any) {
         if (!body || Object.keys(body).length === 0) {
             this.logger.info('✅ Biteship webhook installation test received (empty body)');
@@ -46,7 +47,7 @@ export class BiteshipWebhookController {
             };
         }
 
-        // ✅ Validate payload size
+        // Validate payload size
         if (JSON.stringify(body).length > 50000) {
             this.logger.warn('⚠️ Webhook payload too large');
             return {

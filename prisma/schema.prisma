@@ -43,6 +43,22 @@ enum ShippingType {
   INTERNATIONAL // Manual zone-based
 }
 
+enum NotificationType {
+  ORDER_PAID
+  ORDER_PROCESSING
+  ORDER_SHIPPED
+  ORDER_DELIVERED
+  ORDER_COMPLETED
+  ORDER_CANCELLED
+  ORDER_FAILED
+  REVIEW_REPLY
+  DISCUSSION_REPLY
+  PROMOTION_START
+  PROMOTION_ENDING
+  STOCK_LOW
+  STOCK_AVAILABLE
+}
+
 // ============================================
 // USER & AUTH MODELS
 // ============================================
@@ -56,7 +72,7 @@ model User {
   password    String  @db.VarChar(255)
   phoneNumber String? @map("phone_number") @db.VarChar(20)
 
-  country    String  @default("Indonesia") @db.VarChar(50)
+  country    String  @default("ID") @db.VarChar(2)
   province   String? @db.VarChar(100)
   city       String? @db.VarChar(100)
   district   String? @db.VarChar(100)
@@ -77,9 +93,16 @@ model User {
   refreshTokens     RefreshToken[]
   passwordResets    PasswordReset[]
   blacklistedTokens BlacklistedToken[]
-  review            Review[]
   carts             Cart[]
   orders            Order[]
+
+  // Review & Discussion relations
+  reviews           Review[]
+  reviewReplies     ReviewReply[]
+  discussions       Discussion[]
+  discussionReplies DiscussionReply[]
+  discussionLikes   DiscussionLike[]
+  notification      Notification[]
 
   @@index([email])
   @@index([username])
@@ -155,7 +178,7 @@ model Product {
   idDescription String? @map("id_description") @db.Text
   enDescription String? @map("en_description") @db.Text
   idPrice       Int     @map("id_price")
-  enPrice       Int     @map("en_price")
+  enPrice       Float   @map("en_price")
 
   // 📊 Hybrid analytics fields
   totalSold Int    @default(0) @map("total_sold")
@@ -179,12 +202,15 @@ model Product {
   promotion   Promotion? @relation(fields: [promotionId], references: [id])
 
   tags       ProductTag[]
-  reviews    Review[]
   variants   ProductVariant[]
   images     ProductImage[]
   gallery    GalleryImage[]
   cartItems  CartItem[]
   orderItems OrderItem[]
+
+  // Review & Discussion relations
+  reviews     Review[]
+  discussions Discussion[]
 
   // ⚙️ Status & Features
   isActive     Boolean   @default(true) @map("is_active")
@@ -243,7 +269,7 @@ model ProductVariant {
   product    Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
   images     ProductVariantImage[]
   cartItems  CartItem[]
-  orderItems OrderItem[] // ✅ PHASE 2: Added
+  orderItems OrderItem[]
 
   // ⚙️ Status
   isActive  Boolean   @default(true) @map("is_active")
@@ -340,23 +366,34 @@ model ProductTag {
   @@map("product_tags")
 }
 
-// Model Review
+// ============================================
+// REVIEW & DISCUSSION MODELS
+// ============================================
+
+// Model Review (Updated)
 model Review {
-  id        String        @id @default(uuid())
-  userId    String        @map("user_id")
-  productId String        @map("product_id")
-  rating    Int           @default(0) // 1-5
-  comment   String?       @db.Text
-  images    ReviewImage[]
+  id         String  @id @default(uuid())
+  userId     String  @map("user_id")
+  productId  String  @map("product_id")
+  orderId    String  @map("order_id") // Link to order for verified purchase
+  rating     Int     @default(0) // 1-5
+  comment    String? @db.Text
+  isVerified Boolean @default(true) @map("is_verified") // Verified purchase badge
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  replies ReviewReply[] // Admin replies
+  images  ReviewImage[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([userId, productId, orderId]) // Prevent duplicate review per product per order
   @@index([productId])
   @@index([userId])
+  @@index([orderId])
   @@index([rating])
   @@map("reviews")
 }
@@ -371,6 +408,88 @@ model ReviewImage {
 
   @@index([reviewId])
   @@map("review_images")
+}
+
+// Model ReviewReply (Admin only can reply)
+model ReviewReply {
+  id       String @id @default(uuid())
+  reviewId String @map("review_id")
+  userId   String @map("user_id") // Admin/Owner who replied
+  content  String @db.Text
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([reviewId])
+  @@index([userId])
+  @@map("review_replies")
+}
+
+// Model Discussion (Q&A - All users can ask)
+model Discussion {
+  id        String @id @default(uuid())
+  userId    String @map("user_id")
+  productId String @map("product_id")
+  question  String @db.Text
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  replies DiscussionReply[]
+  likes   DiscussionLike[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([productId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("discussions")
+}
+
+// Model DiscussionReply (All users can reply)
+model DiscussionReply {
+  id           String @id @default(uuid())
+  discussionId String @map("discussion_id")
+  userId       String @map("user_id")
+  content      String @db.Text
+
+  discussion Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  likes DiscussionLike[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([discussionId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("discussion_replies")
+}
+
+// Model DiscussionLike (Like for question & reply)
+model DiscussionLike {
+  id                String  @id @default(uuid())
+  userId            String  @map("user_id")
+  discussionId      String? @map("discussion_id")
+  discussionReplyId String? @map("discussion_reply_id")
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  discussion      Discussion?      @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  discussionReply DiscussionReply? @relation(fields: [discussionReplyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, discussionId])
+  @@unique([userId, discussionReplyId])
+  @@index([discussionId])
+  @@index([discussionReplyId])
+  @@index([userId])
+  @@map("discussion_likes")
 }
 
 // ============================================
@@ -413,24 +532,24 @@ model CartItem {
 }
 
 // ============================================
-// ✅ PHASE 2: ORDER & SHIPPING MODELS
+// ORDER & SHIPPING MODELS
 // ============================================
 
 // Order Model
 model Order {
-  id          String @id @default(uuid())
-  orderNumber String @unique @map("order_number") // ORD-YYYYMMDD-XXXX
-  userId      String @map("user_id")
+  id            String  @id @default(uuid())
+  orderNumber   String  @unique @map("order_number") // ORD-YYYYMMDD-XXXX
+  invoiceNumber String? @unique @map("invoice_number") // INV-20250001 (generated when PAID)
+  userId        String  @map("user_id")
 
   // Order Status
   status OrderStatus @default(PENDING)
 
-  // Pricing
-  subtotal     Int // Total harga items sebelum discount
-  discount     Int @default(0) // Discount dari promotion/voucher
-  tax          Int // PPN 11%
-  shippingCost Int @map("shipping_cost")
-  total        Int // Grand total
+  subtotal     Float // Total harga items sebelum discount
+  discount     Float @default(0) // Discount dari promotion/voucher
+  tax          Float // PPN 11%
+  shippingCost Float @map("shipping_cost")
+  total        Float // Grand total
 
   // Currency & Exchange Rate
   currency     String @default("IDR") // IDR atau USD
@@ -475,8 +594,9 @@ model Order {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items OrderItem[]
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items   OrderItem[]
+  reviews Review[] // Reviews linked to this order
 
   @@index([userId])
   @@index([orderNumber])
@@ -493,13 +613,15 @@ model OrderItem {
   variantId String? @map("variant_id")
 
   // Snapshot data (untuk history, case product/variant dihapus)
-  productName  String @map("product_name")
-  variantName  String @map("variant_name")
-  sku          String
-  quantity     Int
-  pricePerItem Int    @map("price_per_item") // Harga per item saat order
-  discount     Int    @default(0) // Discount per item dari promotion
-  subtotal     Int // (pricePerItem - discount) * quantity
+  productName String @map("product_name")
+  variantName String @map("variant_name")
+  sku         String
+  quantity    Int
+
+  // Pricing - Changed from Int to Float for USD support
+  pricePerItem Float @map("price_per_item") // Harga per item saat order
+  discount     Float @default(0) // Discount per item dari promotion
+  subtotal     Float // (pricePerItem - discount) * quantity
 
   // Image snapshot
   productImage String? @map("product_image")
@@ -523,9 +645,9 @@ model ShippingZone {
   name      String   @unique // e.g., "Zone 1 - Asia", "Zone 2 - Europe"
   countries String[] // Array of country codes: ["SG", "MY", "TH"]
 
-  // Pricing
-  baseRate  Int @map("base_rate") // Base shipping fee
-  perKgRate Int @map("per_kg_rate") // Additional per kg
+  // Pricing in USD
+  baseRate  Float @map("base_rate") // Base shipping fee in USD (e.g., 15.00)
+  perKgRate Float @map("per_kg_rate") // Additional per kg in USD (e.g., 5.00)
 
   // Delivery estimate
   minDays Int @map("min_days")
@@ -539,4 +661,26 @@ model ShippingZone {
   orders Order[]
 
   @@map("shipping_zones")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  type      NotificationType
+  title     String           @db.VarChar(255)
+  message   String           @db.Text
+  data      Json? // Store related IDs: { orderId, orderNumber, productId, reviewId, etc }
+  imageUrl  String?          @map("image_url") @db.VarChar(500) // Product/order image
+  actionUrl String?          @map("action_url") @db.VarChar(500) // Link to navigate
+  isRead    Boolean          @default(false) @map("is_read")
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@index([type])
+  @@map("notifications")
 }
