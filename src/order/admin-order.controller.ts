@@ -1,3 +1,5 @@
+// src/order/admin-order.controller.ts
+
 import {
     Controller,
     Get,
@@ -9,6 +11,7 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import { OrderService } from './order.service';
+import { OrderExpiryCron } from './cron/order-expiry.cron';
 import { ValidationService } from '../common/validation.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -26,8 +29,61 @@ import {
 export class AdminOrderController {
     constructor(
         private orderService: OrderService,
+        private orderExpiryCron: OrderExpiryCron,
         private validationService: ValidationService,
     ) {}
+
+    /**
+     * POST /admin/orders/cron/auto-complete
+     * Manual trigger for auto-complete cron job
+     */
+    @Post('cron/auto-complete')
+    async manualAutoComplete() {
+        const result = await this.orderService.autoCompleteDeliveredOrders();
+
+        return {
+            message: 'Auto-complete triggered successfully',
+            data: result,
+        };
+    }
+
+    /**
+     * POST /admin/orders/cron/cancel-expired
+     * Manual trigger for order expiry cron job
+     */
+    @Post('cron/cancel-expired')
+    async manualCancelExpired() {
+        const result = await this.orderExpiryCron.triggerManually();
+
+        return {
+            message: 'Order expiry check triggered successfully',
+            data: result,
+        };
+    }
+
+    /**
+     * GET /admin/orders/pending/without-payment
+     * Get PENDING orders that need attention (older than 1 hour)
+     */
+    @Get('pending/without-payment')
+    async getPendingOrders() {
+        return {
+            message: 'Feature coming soon',
+            data: [],
+        };
+    }
+
+    /**
+     * GET /admin/orders/paid/without-tracking
+     * Get PAID orders without tracking number (Biteship creation failed)
+     */
+    @Get('paid/without-tracking')
+    async getPaidOrdersWithoutTracking() {
+        return {
+            message: 'Feature coming soon',
+            data: [],
+        };
+    }
 
     /**
      * GET /admin/orders
@@ -79,6 +135,17 @@ export class AdminOrderController {
     }
 
     /**
+     * GET /admin/orders/:orderNumber/tracking
+     * Get tracking info (admin view - no ownership check)
+     */
+    @Get(':orderNumber/tracking')
+    async getTrackingInfo(
+        @Param('orderNumber') orderNumber: string,
+    ) {
+        return this.orderService.getTrackingInfoAdmin(orderNumber);
+    }
+
+    /**
      * PATCH /admin/orders/:orderNumber/status
      * Update order status
      */
@@ -96,7 +163,7 @@ export class AdminOrderController {
     }
 
     /**
-     * 🆕 GET /admin/orders/:orderNumber/shipping-label
+     * GET /admin/orders/:orderNumber/shipping-label
      * Get shipping label URL
      */
     @Get(':orderNumber/shipping-label')
@@ -107,16 +174,13 @@ export class AdminOrderController {
     }
 
     /**
-     * ✅ NEW: POST /admin/orders/cron/auto-complete
-     * Manual trigger for auto-complete cron job
+     * POST /admin/orders/:orderNumber/retry-biteship
+     * Retry Biteship order creation (for failed/missing shipping orders)
      */
-    @Post('cron/auto-complete')
-    async manualAutoComplete() {
-        const result = await this.orderService.autoCompleteDeliveredOrders();
-
-        return {
-            message: 'Auto-complete triggered successfully',
-            data: result,
-        };
+    @Post(':orderNumber/retry-biteship')
+    async retryBiteshipCreation(
+        @Param('orderNumber') orderNumber: string,
+    ) {
+        return this.orderService.retryBiteshipCreation(orderNumber);
     }
 }

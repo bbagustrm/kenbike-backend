@@ -14,11 +14,13 @@ import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Prisma } from '@prisma/client';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class PromotionService {
     constructor(
         private prisma: PrismaService,
+        private notificationService: NotificationService, // ✅ NEW
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
@@ -36,25 +38,20 @@ export class PromotionService {
             order,
         } = dto;
 
-        // Validate pagination
         const { page: validPage, limit: validLimit } = PaginationUtil.validateParams(page, limit);
 
-        // Build where clause
         const where: Prisma.PromotionWhereInput = {};
 
-        // Soft delete filter
         if (!isAdmin || !includeDeleted) {
             where.deletedAt = null;
         }
 
-        // Active filter
         if (!isAdmin) {
             where.isActive = true;
         } else if (isActive !== undefined) {
             where.isActive = isActive;
         }
 
-        // For public, always filter out expired
         if (!isAdmin) {
             where.AND = [
                 { startDate: { lte: new Date() } },
@@ -62,15 +59,12 @@ export class PromotionService {
             ];
         }
 
-        // Search filter
         if (search) {
             where.name = { contains: search, mode: 'insensitive' };
         }
 
-        // Get total count
         const total = await this.prisma.promotion.count({ where });
 
-        // Prepare orderBy
         let orderBy: any = {};
         if (sortBy === 'productCount') {
             orderBy = { createdAt: order };
@@ -78,7 +72,6 @@ export class PromotionService {
             orderBy = { [sortBy]: order };
         }
 
-        // Get promotions
         const promotions = await this.prisma.promotion.findMany({
             where,
             include: {
@@ -98,7 +91,6 @@ export class PromotionService {
             orderBy,
         });
 
-        // Sort by product count if needed
         let sortedPromotions = promotions;
         if (sortBy === 'productCount') {
             sortedPromotions = promotions.sort((a, b) => {
@@ -107,7 +99,6 @@ export class PromotionService {
             });
         }
 
-        // Transform response
         const data = sortedPromotions.map((promotion) => ({
             id: promotion.id,
             name: promotion.name,
@@ -199,7 +190,6 @@ export class PromotionService {
             throw new NotFoundException('Promotion not found');
         }
 
-        // Public can only see active, non-deleted, non-expired promotions
         if (!isAdmin) {
             if (
                 promotion.deletedAt ||
@@ -247,12 +237,12 @@ export class PromotionService {
                         enPrice: true,
                         images: {
                             orderBy: { order: 'asc' },
-                            take: 1, // Only get primary image
+                            take: 1,
                         },
                         totalSold: true,
                         isActive: true,
                     },
-                    take: 50, // Limit products in response
+                    take: 50,
                 },
             },
         });
@@ -275,8 +265,8 @@ export class PromotionService {
                 deletedAt: promotion.deletedAt,
                 products: promotion.products.map((product) => ({
                     ...product,
-                    imageUrl: product.images[0]?.imageUrl || null, // Get primary image
-                    images: product.images, // Keep images array
+                    imageUrl: product.images[0]?.imageUrl || null,
+                    images: product.images,
                     discountedIdPrice: Math.round(product.idPrice * (1 - promotion.discount)),
                     discountedEnPrice: Math.round(product.enPrice * (1 - promotion.discount)),
                     savings: Math.round(product.idPrice * promotion.discount),
@@ -288,10 +278,9 @@ export class PromotionService {
     }
 
     /**
-     * CREATE PROMOTION (Admin)
+     * ✅ CREATE PROMOTION (Admin) with NOTIFICATION option
      */
-    async createPromotion(dto: CreatePromotionDto) {
-        // Check if name already exists
+    async createPromotion(dto: CreatePromotionDto, sendNotification: boolean = false) {
         const existingPromotion = await this.prisma.promotion.findFirst({
             where: {
                 name: {
@@ -306,7 +295,6 @@ export class PromotionService {
             throw new ConflictException('Promotion with this name already exists');
         }
 
-        // Create promotion
         const promotion = await this.prisma.promotion.create({
             data: {
                 name: dto.name,
@@ -319,6 +307,30 @@ export class PromotionService {
 
         this.logger.info(`✅ Promotion created: ${promotion.name} (${promotion.id})`);
 
+        // ✅ NEW: Send notification to all users if requested and promotion starts now
+        if (sendNotification && dto.isActive) {
+            const now = new Date();
+            const startDate = new Date(dto.startDate);
+
+            // Only notify if promotion is starting now or already started
+            if (startDate <= now) {
+                try {
+                    await this.notificationService.notifyPromotionStart(
+                        promotion.name,
+                        promotion.discount,
+                        promotion.id,
+                        'id',
+                    );
+                    this.logger.info(`🔔 Promotion notification sent: ${promotion.name}`);
+                } catch (error: any) {
+                    this.logger.error('❌ Failed to send promotion notification', {
+                        promotionId: promotion.id,
+                        error: error.message,
+                    });
+                }
+            }
+        }
+
         return this.getPromotionById(promotion.id, true);
     }
 
@@ -326,7 +338,6 @@ export class PromotionService {
      * UPDATE PROMOTION (Admin)
      */
     async updatePromotion(id: string, dto: UpdatePromotionDto) {
-        // Check if promotion exists
         const existingPromotion = await this.prisma.promotion.findUnique({
             where: { id },
         });
@@ -335,7 +346,6 @@ export class PromotionService {
             throw new NotFoundException('Promotion not found');
         }
 
-        // Check if name is being changed and already exists
         if (dto.name && dto.name !== existingPromotion.name) {
             const nameExists = await this.prisma.promotion.findFirst({
                 where: {
@@ -353,7 +363,6 @@ export class PromotionService {
             }
         }
 
-        // Validate date range with existing dates
         const startDate = dto.startDate
             ? new Date(dto.startDate)
             : existingPromotion.startDate;
@@ -363,7 +372,6 @@ export class PromotionService {
             throw new BadRequestException('End date must be after start date');
         }
 
-        // Update promotion
         const promotion = await this.prisma.promotion.update({
             where: { id },
             data: {
@@ -396,7 +404,6 @@ export class PromotionService {
             throw new BadRequestException('Promotion already deleted');
         }
 
-        // Soft delete promotion (products will have promotionId set to null)
         await this.prisma.$transaction([
             this.prisma.promotion.update({
                 where: { id },
@@ -432,7 +439,6 @@ export class PromotionService {
             throw new BadRequestException('Promotion is not deleted');
         }
 
-        // Restore promotion
         await this.prisma.promotion.update({
             where: { id },
             data: { deletedAt: null },
@@ -460,7 +466,6 @@ export class PromotionService {
             throw new NotFoundException('Promotion not found');
         }
 
-        // Remove promotion from all products first
         if (promotion._count.products > 0) {
             await this.prisma.product.updateMany({
                 where: { promotionId: id },
@@ -468,7 +473,6 @@ export class PromotionService {
             });
         }
 
-        // Hard delete from database
         await this.prisma.promotion.delete({
             where: { id },
         });
@@ -517,7 +521,6 @@ export class PromotionService {
      * ASSIGN PRODUCT TO PROMOTION (Admin)
      */
     async assignProductToPromotion(promotionId: string, productId: string) {
-        // Check if promotion exists and is valid
         const promotion = await this.prisma.promotion.findUnique({
             where: { id: promotionId, deletedAt: null },
         });
@@ -526,7 +529,6 @@ export class PromotionService {
             throw new NotFoundException('Promotion not found');
         }
 
-        // Check if product exists
         const product = await this.prisma.product.findUnique({
             where: { id: productId, deletedAt: null },
         });
@@ -535,12 +537,10 @@ export class PromotionService {
             throw new NotFoundException('Product not found');
         }
 
-        // Check if product already has a promotion
         if (product.promotionId) {
             throw new ConflictException('Product already has an active promotion');
         }
 
-        // Assign promotion to product
         await this.prisma.product.update({
             where: { id: productId },
             data: { promotionId },
@@ -567,7 +567,6 @@ export class PromotionService {
      * REMOVE PRODUCT FROM PROMOTION (Admin)
      */
     async removeProductFromPromotion(promotionId: string, productId: string) {
-        // Check if product exists and has this promotion
         const product = await this.prisma.product.findUnique({
             where: { id: productId },
         });
@@ -580,7 +579,6 @@ export class PromotionService {
             throw new BadRequestException('Product does not have this promotion');
         }
 
-        // Remove promotion from product
         await this.prisma.product.update({
             where: { id: productId },
             data: { promotionId: null },
@@ -597,7 +595,6 @@ export class PromotionService {
      * BULK ASSIGN PRODUCTS TO PROMOTION (Admin)
      */
     async bulkAssignProducts(promotionId: string, productIds: string[]) {
-        // Check if promotion exists
         const promotion = await this.prisma.promotion.findUnique({
             where: { id: promotionId, deletedAt: null },
         });
@@ -606,7 +603,6 @@ export class PromotionService {
             throw new NotFoundException('Promotion not found');
         }
 
-        // Check products exist (without filtering by promotionId yet)
         const products = await this.prisma.product.findMany({
             where: {
                 id: { in: productIds },
@@ -619,7 +615,6 @@ export class PromotionService {
             },
         });
 
-        // Check if all requested products were found
         if (products.length !== productIds.length) {
             const foundIds = products.map((p) => p.id);
             const missingIds = productIds.filter((id) => !foundIds.includes(id));
@@ -628,7 +623,6 @@ export class PromotionService {
             );
         }
 
-        // Check which products already have promotions
         const productsWithPromotion = products.filter((p) => p.promotionId !== null);
 
         if (productsWithPromotion.length > 0) {
@@ -638,7 +632,6 @@ export class PromotionService {
             );
         }
 
-        // Assign promotion to all products
         const result = await this.prisma.product.updateMany({
             where: {
                 id: { in: productIds },
@@ -663,12 +656,22 @@ export class PromotionService {
     }
 
     /**
-     * AUTO ACTIVATE/DEACTIVATE PROMOTIONS (Cron Job)
+     * ✅ AUTO ACTIVATE/DEACTIVATE PROMOTIONS (Cron Job) with NOTIFICATION
      * Runs every hour to check promotion dates
      */
     @Cron(CronExpression.EVERY_HOUR)
     async autoUpdatePromotionStatus() {
         const now = new Date();
+
+        // Find promotions that are about to be activated
+        const promotionsToActivate = await this.prisma.promotion.findMany({
+            where: {
+                isActive: false,
+                deletedAt: null,
+                startDate: { lte: now },
+                endDate: { gte: now },
+            },
+        });
 
         // Activate promotions that should start
         const toActivate = await this.prisma.promotion.updateMany({
@@ -680,6 +683,24 @@ export class PromotionService {
             },
             data: { isActive: true },
         });
+
+        // ✅ NEW: Send notifications for newly activated promotions
+        for (const promo of promotionsToActivate) {
+            try {
+                await this.notificationService.notifyPromotionStart(
+                    promo.name,
+                    promo.discount,
+                    promo.id,
+                    'id',
+                );
+                this.logger.info(`🔔 Promotion activation notification sent: ${promo.name}`);
+            } catch (error: any) {
+                this.logger.error('❌ Failed to send promotion activation notification', {
+                    promotionId: promo.id,
+                    error: error.message,
+                });
+            }
+        }
 
         // Deactivate expired promotions
         const toDeactivate = await this.prisma.promotion.updateMany({
@@ -759,13 +780,11 @@ export class PromotionService {
         const totalSold = promotion.products.reduce((sum, p) => sum + p.totalSold, 0);
         const totalViews = promotion.products.reduce((sum, p) => sum + p.totalView, 0);
 
-        // Calculate potential savings
         const potentialSavings = promotion.products.reduce(
             (sum, p) => sum + p.idPrice * promotion.discount * p.totalSold,
             0,
         );
 
-        // Top products
         const topProducts = promotion.products
             .sort((a, b) => b.totalSold - a.totalSold)
             .slice(0, 5)

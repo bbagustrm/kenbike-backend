@@ -1,73 +1,91 @@
 // src/order/biteship-webhook.service.ts
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
+import { PrismaService } from '../common/prisma.service';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
-import { PrismaService } from '../common/prisma.service';
+import { NotificationService } from '../notification/notification.service'; // ✅ NEW
+import { OrderStatus } from '@prisma/client'; // ✅ NEW
 
 @Injectable()
 export class BiteshipWebhookService {
     constructor(
         private prisma: PrismaService,
+        private notificationService: NotificationService, // ✅ NEW
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
     /**
-     * Process Biteship webhook notification
+     * Process Biteship webhook payload
      */
-    async processWebhook(webhookData: any): Promise<void> {
-        const { order_id, status, courier } = webhookData;
+    async processWebhook(payload: any) {
+        const { order_id: biteshipOrderId, status, courier } = payload;
+
+        if (!biteshipOrderId || !status) {
+            this.logger.warn('⚠️ Invalid Biteship webhook payload', { payload });
+            return;
+        }
+
+        this.logger.info('📦 Processing Biteship webhook', {
+            biteshipOrderId,
+            status,
+            courier: courier?.name,
+            trackingId: courier?.tracking_id,
+        });
 
         // Find order by Biteship order ID
         const order = await this.prisma.order.findUnique({
-            where: { biteshipOrderId: order_id },
+            where: { biteshipOrderId },
         });
 
         if (!order) {
-            this.logger.warn('⚠️ Order not found for Biteship order ID', {
-                biteshipOrderId: order_id,
-            });
-            throw new NotFoundException('Order not found');
+            this.logger.warn('⚠️ Order not found for Biteship webhook', { biteshipOrderId });
+            return;
         }
 
-        this.logger.info('🔄 Processing Biteship status update', {
-            orderNumber: order.orderNumber,
-            currentStatus: order.status,
-            newBiteshipStatus: status,
-        });
-
-        // Update order based on Biteship status
-        await this.updateOrderStatus(order.id, status, webhookData);
-    }
-
-    /**
-     * Update order status based on Biteship status
-     */
-    private async updateOrderStatus(
-        orderId: string,
-        biteshipStatus: string,
-        webhookData: any,
-    ): Promise<void> {
-        // Map Biteship status to our OrderStatus
-        const statusMap: Record<string, string> = {
-            confirmed: 'SHIPPED', // Order confirmed by Biteship
-            allocated: 'SHIPPED', // Courier allocated
-            picking_up: 'SHIPPED', // Courier on the way to pickup
-            picked: 'SHIPPED', // Package picked up
-            dropping_off: 'SHIPPED', // On the way to deliver
-            on_hold: 'SHIPPED', // Package on hold
-            delivered: 'DELIVERED', // Package delivered ✅
-            cancelled: 'CANCELLED', // Order cancelled
-            rejected: 'CANCELLED', // Rejected by courier
-            courier_not_found: 'FAILED', // No courier found
-            returned: 'CANCELLED', // Returned to sender
+        // Map Biteship status to internal order status
+        const statusMap: Record<string, OrderStatus> = {
+            'confirmed': OrderStatus.SHIPPED,
+            'allocated': OrderStatus.SHIPPED,
+            'picking_up': OrderStatus.SHIPPED,
+            'picked': OrderStatus.SHIPPED,
+            'dropping_off': OrderStatus.SHIPPED,
+            'delivered': OrderStatus.DELIVERED,
+            'rejected': OrderStatus.CANCELLED,
+            'cancelled': OrderStatus.CANCELLED,
+            'courier_not_found': OrderStatus.CANCELLED,
+            'returned': OrderStatus.CANCELLED,
         };
 
-        const newStatus = statusMap[biteshipStatus];
+        const newStatus = statusMap[status.toLowerCase()];
 
         if (!newStatus) {
-            this.logger.warn('⚠️ Unknown Biteship status', {
-                biteshipStatus,
-                orderId,
+            this.logger.warn('⚠️ Unknown Biteship status', { status, biteshipOrderId });
+            return;
+        }
+
+        // Only update if status has changed
+        if (order.status === newStatus) {
+            this.logger.info('ℹ️ Order status unchanged', {
+                orderNumber: order.orderNumber,
+                status: newStatus,
+            });
+            return;
+        }
+
+        // Validate status transition
+        const validTransitions: Record<string, OrderStatus[]> = {
+            'PAID': [OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.CANCELLED],
+            'PROCESSING': [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
+            'SHIPPED': [OrderStatus.DELIVERED, OrderStatus.CANCELLED],
+            'DELIVERED': [OrderStatus.COMPLETED],
+        };
+
+        const allowedTransitions = validTransitions[order.status] || [];
+        if (!allowedTransitions.includes(newStatus)) {
+            this.logger.warn('⚠️ Invalid status transition from webhook', {
+                orderNumber: order.orderNumber,
+                currentStatus: order.status,
+                attemptedStatus: newStatus,
             });
             return;
         }
@@ -77,49 +95,87 @@ export class BiteshipWebhookService {
             status: newStatus,
         };
 
-        // Update tracking number if available
-        if (webhookData.courier?.tracking_id && !updateData.trackingNumber) {
-            updateData.trackingNumber = webhookData.courier.tracking_id;
+        // Update tracking number if provided
+        if (courier?.tracking_id && !order.trackingNumber) {
+            updateData.trackingNumber = courier.tracking_id;
         }
 
-        // Set timestamp based on status
-        if (biteshipStatus === 'delivered') {
+        // Set timestamps based on new status
+        if (newStatus === OrderStatus.SHIPPED && !order.shippedAt) {
+            updateData.shippedAt = new Date();
+        } else if (newStatus === OrderStatus.DELIVERED) {
             updateData.deliveredAt = new Date();
-        } else if (
-            biteshipStatus === 'cancelled' ||
-            biteshipStatus === 'rejected' ||
-            biteshipStatus === 'returned'
-        ) {
+        } else if (newStatus === OrderStatus.CANCELLED) {
             updateData.canceledAt = new Date();
         }
 
         // Update order
         await this.prisma.order.update({
-            where: { id: orderId },
+            where: { id: order.id },
             data: updateData,
         });
 
-        this.logger.info('✅ Order status updated', {
-            orderId,
-            biteshipStatus,
+        // ✅ NEW: Send notification to user about status change
+        try {
+            await this.notificationService.notifyOrderStatusChange(
+                order.userId,
+                order.orderNumber,
+                order.id,
+                newStatus,
+                'id', // Default Indonesian locale
+            );
+
+            this.logger.info('✅ Notification sent for Biteship status update', {
+                orderNumber: order.orderNumber,
+                status: newStatus,
+            });
+        } catch (error: any) {
+            this.logger.error('❌ Failed to send Biteship status notification', {
+                orderNumber: order.orderNumber,
+                status: newStatus,
+                error: error.message,
+            });
+        }
+
+        this.logger.info('✅ Order status updated from Biteship webhook', {
+            orderNumber: order.orderNumber,
+            previousStatus: order.status,
             newStatus,
+            trackingNumber: updateData.trackingNumber || order.trackingNumber,
         });
 
-        // TODO Phase 4: Send email notification to customer
+        // Handle stock restoration for cancelled orders
+        if (newStatus === OrderStatus.CANCELLED && ['PAID', 'PROCESSING', 'SHIPPED'].includes(order.status)) {
+            await this.restoreStockForCancelledOrder(order.id);
+        }
     }
 
     /**
-     * Get delivery status history from webhook data
+     * Restore stock for cancelled orders
      */
-    private getDeliveryHistory(webhookData: any): any[] {
-        if (!webhookData.history || !Array.isArray(webhookData.history)) {
-            return [];
-        }
+    private async restoreStockForCancelledOrder(orderId: string) {
+        const orderItems = await this.prisma.orderItem.findMany({
+            where: { orderId },
+            select: { variantId: true, quantity: true },
+        });
 
-        return webhookData.history.map((item: any) => ({
-            status: item.status,
-            note: item.note,
-            updatedAt: item.updated_at,
-        }));
+        for (const item of orderItems) {
+            if (item.variantId) {
+                await this.prisma.productVariant.update({
+                    where: { id: item.variantId },
+                    data: {
+                        stock: {
+                            increment: item.quantity,
+                        },
+                    },
+                });
+
+                this.logger.info('📦 Stock restored for cancelled order', {
+                    orderId,
+                    variantId: item.variantId,
+                    quantity: item.quantity,
+                });
+            }
+        }
     }
 }
