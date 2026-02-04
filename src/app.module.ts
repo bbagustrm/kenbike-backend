@@ -21,6 +21,7 @@ import { DiscussionService } from './discussion/discussion.service';
 import { DiscussionModule } from './discussion/discussion.module';
 import {ReviewModule} from "./review/review.module";
 import { NotificationModule } from './notification/notification.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { NotificationModule } from './notification/notification.module';
     ReviewModule,
     DiscussionModule,
     NotificationModule,
+    AnalyticsModule,
   ],
   controllers: [AppController, DiscussionController],
   providers: [
