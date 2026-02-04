@@ -15,10 +15,13 @@ import { OrderExpiryCron } from './cron/order-expiry.cron';
 import { PrismaService } from '../common/prisma.service';
 import { ValidationService } from '../common/validation.service';
 import { InvoiceModule } from '../invoice/invoice.module';
+import { NotificationModule } from '../notification/notification.module';
+import { EmailService } from '../common/email.service';
 
 @Module({
   imports: [
     InvoiceModule,
+    NotificationModule,
     ConfigModule,
     ScheduleModule.forRoot(),
   ],
@@ -36,6 +39,7 @@ import { InvoiceModule } from '../invoice/invoice.module';
     OrderExpiryCron,
     PrismaService,
     ValidationService,
+    EmailService,
   ],
   exports: [
     OrderService,

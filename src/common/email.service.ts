@@ -208,4 +208,126 @@ export class EmailService {
             </html>
         `;
     }
+    
+// ============================================
+// OTP EMAIL
+// ============================================
+
+    async sendOtpEmail(email: string, otp: string, locale: 'id' | 'en' = 'id'): Promise<void> {
+        const subject = locale === 'id'
+            ? 'Kode Verifikasi Email - KenBike'
+            : 'Email Verification Code - KenBike';
+
+        const content = locale === 'id'
+            ? `Kode verifikasi Anda adalah: ${otp}\n\nKode ini berlaku selama 15 menit.\nJangan bagikan kode ini kepada siapapun.`
+            : `Your verification code is: ${otp}\n\nThis code is valid for 15 minutes.\nDo not share this code with anyone.`;
+
+        await this.sendPlainTextEmail(email, subject, content);
+    }
+
+// ============================================
+// ORDER NOTIFICATION EMAILS
+// ============================================
+
+    async sendOrderPaidEmail(
+        email: string,
+        data: { orderNumber: string; total: number; currency: string },
+        locale: 'id' | 'en' = 'id'
+    ): Promise<void> {
+        const subject = locale === 'id'
+            ? `Pembayaran Berhasil - ${data.orderNumber}`
+            : `Payment Successful - ${data.orderNumber}`;
+
+        const content = locale === 'id'
+            ? `Pembayaran untuk pesanan ${data.orderNumber} telah berhasil.\n\nTotal: ${data.currency} ${data.total.toLocaleString()}\n\nPesanan Anda sedang diproses.`
+            : `Payment for order ${data.orderNumber} was successful.\n\nTotal: ${data.currency} ${data.total.toLocaleString()}\n\nYour order is being processed.`;
+
+        await this.sendPlainTextEmail(email, subject, content);
+    }
+
+    async sendOrderShippedEmail(
+        email: string,
+        data: { orderNumber: string; trackingNumber?: string; courier?: string },
+        locale: 'id' | 'en' = 'id'
+    ): Promise<void> {
+        const subject = locale === 'id'
+            ? `Pesanan Dikirim - ${data.orderNumber}`
+            : `Order Shipped - ${data.orderNumber}`;
+
+        let content = locale === 'id'
+            ? `Pesanan ${data.orderNumber} telah dikirim.`
+            : `Order ${data.orderNumber} has been shipped.`;
+
+        if (data.trackingNumber) {
+            content += locale === 'id'
+                ? `\n\nNo. Resi: ${data.trackingNumber}`
+                : `\n\nTracking Number: ${data.trackingNumber}`;
+        }
+        if (data.courier) {
+            content += locale === 'id'
+                ? `\nKurir: ${data.courier}`
+                : `\nCourier: ${data.courier}`;
+        }
+
+        await this.sendPlainTextEmail(email, subject, content);
+    }
+
+    async sendOrderDeliveredEmail(
+        email: string,
+        data: { orderNumber: string },
+        locale: 'id' | 'en' = 'id'
+    ): Promise<void> {
+        const subject = locale === 'id'
+            ? `Pesanan Terkirim - ${data.orderNumber}`
+            : `Order Delivered - ${data.orderNumber}`;
+
+        const content = locale === 'id'
+            ? `Pesanan ${data.orderNumber} telah sampai.\n\nTerima kasih telah berbelanja di KenBike!`
+            : `Order ${data.orderNumber} has been delivered.\n\nThank you for shopping at KenBike!`;
+
+        await this.sendPlainTextEmail(email, subject, content);
+    }
+
+// ============================================
+// PROFILE NOTIFICATION EMAILS
+// ============================================
+
+    async sendPasswordChangedEmail(email: string, locale: 'id' | 'en' = 'id'): Promise<void> {
+        const subject = locale === 'id'
+            ? 'Password Berhasil Diubah - KenBike'
+            : 'Password Changed Successfully - KenBike';
+
+        const content = locale === 'id'
+            ? `Password akun Anda telah berhasil diubah.\n\nJika Anda tidak melakukan perubahan ini, segera hubungi kami.`
+            : `Your account password has been changed successfully.\n\nIf you did not make this change, please contact us immediately.`;
+
+        await this.sendPlainTextEmail(email, subject, content);
+    }
+
+// ============================================
+// HELPER: PLAIN TEXT EMAIL
+// ============================================
+
+    private async sendPlainTextEmail(to: string, subject: string, content: string): Promise<void> {
+        const mailOptions = {
+            from: `"${this.fromName}" <${this.from}>`,
+            to,
+            subject,
+            text: content,
+        };
+
+        try {
+            if (!this.transporter) {
+                this.logger.warn(`📧 Email not configured. Would send to ${to}: ${subject}`);
+                this.logger.warn(`📧 Content: ${content}`);
+                return;
+            }
+
+            await this.transporter.sendMail(mailOptions);
+            this.logger.info(`✅ Email sent to: ${to} - ${subject}`);
+        } catch (error) {
+            this.logger.error(`❌ Failed to send email to ${to}:`, error);
+            // Don't throw - email failure shouldn't break main flow
+        }
+    }
 }

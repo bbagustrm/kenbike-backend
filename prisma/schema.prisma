@@ -69,8 +69,11 @@ model User {
   lastName    String  @map("last_name") @db.VarChar(50)
   username    String  @unique @db.VarChar(30)
   email       String  @unique @db.VarChar(255)
-  password    String  @db.VarChar(255)
+  password    String? @db.VarChar(255)
   phoneNumber String? @map("phone_number") @db.VarChar(20)
+
+  provider   String? @default("local") @db.VarChar(20) // 'local' | 'google'
+  providerId String? @map("provider_id") @db.VarChar(255) // Google user ID
 
   country    String  @default("ID") @db.VarChar(2)
   province   String? @db.VarChar(100)
@@ -79,15 +82,17 @@ model User {
   postalCode String? @map("postal_code") @db.VarChar(10)
   address    String? @db.VarChar(500)
 
-  profileImage    String?   @map("profile_image") @db.VarChar(500)
-  role            Role      @default(USER)
-  isActive        Boolean   @default(true) @map("is_active")
-  suspendedAt     DateTime? @map("suspended_at")
-  suspendedReason String?   @map("suspended_reason") @db.Text
-  lastLogin       DateTime? @map("last_login")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  deletedAt       DateTime? @map("deleted_at")
+  profileImage      String?   @map("profile_image") @db.VarChar(500)
+  isProfileComplete Boolean   @default(false) @map("is_profile_complete")
+  isEmailVerified   Boolean   @default(false) @map("is_email_verified")
+  role              Role      @default(USER)
+  isActive          Boolean   @default(true) @map("is_active")
+  suspendedAt       DateTime? @map("suspended_at")
+  suspendedReason   String?   @map("suspended_reason") @db.Text
+  lastLogin         DateTime? @map("last_login")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
 
   // Relations
   refreshTokens     RefreshToken[]
@@ -683,4 +688,18 @@ model Notification {
   @@index([createdAt])
   @@index([type])
   @@map("notifications")
+}
+
+model EmailVerification {
+  id        String    @id @default(uuid())
+  email     String    @db.VarChar(255)
+  otp       String    @db.VarChar(6)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([email])
+  @@index([otp])
+  @@index([expiresAt])
+  @@map("email_verifications")
 }

@@ -32,8 +32,9 @@ import {
 } from './dto/order-management.dto';
 import { BiteshipOrderRequest } from './interfaces/shipping.interface';
 import { InvoiceService } from '../invoice/invoice.service';
-import { NotificationService } from '../notification/notification.service'; // ✅ NEW
-import { OrderStatus } from '@prisma/client'; // ✅ NEW
+import { NotificationService } from '../notification/notification.service';
+import { EmailService } from '../common/email.service'; // 👈 NEW
+import { OrderStatus } from '@prisma/client';
 
 @Injectable()
 export class OrderService {
@@ -46,7 +47,8 @@ export class OrderService {
         private internationalShippingService: InternationalShippingService,
         private configService: ConfigService,
         private invoiceService: InvoiceService,
-        private notificationService: NotificationService, // ✅ NEW
+        private notificationService: NotificationService,
+        private emailService: EmailService, // 👈 NEW
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {
         this.taxRate = parseFloat(this.configService.get<string>('TAX_RATE') || '0.11');
@@ -454,7 +456,7 @@ export class OrderService {
 
     /**
      * ✅ Mark order as paid with automatic Biteship order creation
-     * AND invoice number assignment + NOTIFICATION
+     * AND invoice number assignment + NOTIFICATION + EMAIL
      */
     async markOrderAsPaid(orderNumber: string, paidAt?: Date) {
         this.logger.info(`💰 Marking order as paid: ${orderNumber}`);
@@ -479,17 +481,36 @@ export class OrderService {
             },
         });
 
-        // ✅ NEW: Send notification for PAID status
+        // ✅ Send notification for PAID status
         try {
             await this.notificationService.notifyOrderStatusChange(
                 order.userId,
                 order.orderNumber,
                 order.id,
                 OrderStatus.PAID,
-                'id', // Default to Indonesian locale
+                'id',
             );
         } catch (error: any) {
             this.logger.error('❌ Failed to send PAID notification', {
+                orderNumber,
+                error: error.message,
+            });
+        }
+
+        // 👇 NEW: Send email notification for PAID
+        try {
+            await this.emailService.sendOrderPaidEmail(
+                order.user.email,
+                {
+                    orderNumber: order.orderNumber,
+                    total: order.total,
+                    currency: order.currency,
+                },
+                'id',
+            );
+            this.logger.info(`📧 Order paid email sent to: ${order.user.email}`);
+        } catch (error: any) {
+            this.logger.error('❌ Failed to send order paid email', {
                 orderNumber,
                 error: error.message,
             });
@@ -669,7 +690,7 @@ export class OrderService {
     }
 
     /**
-     * ✅ Update order status with NOTIFICATION
+     * ✅ Update order status with NOTIFICATION + EMAIL
      */
     async updateOrderStatus(orderNumber: string, dto: UpdateOrderStatusDto) {
         const order = await this.prisma.order.findUnique({
@@ -763,7 +784,7 @@ export class OrderService {
             data: updateData,
         });
 
-        // ✅ NEW: Send notification for status change
+        // ✅ Send notification for status change
         try {
             await this.notificationService.notifyOrderStatusChange(
                 order.userId,
@@ -774,6 +795,35 @@ export class OrderService {
             );
         } catch (error: any) {
             this.logger.error('❌ Failed to send order status notification', {
+                orderNumber,
+                status: dto.status,
+                error: error.message,
+            });
+        }
+
+        // 👇 NEW: Send email notifications based on status
+        try {
+            if (dto.status === 'SHIPPED') {
+                await this.emailService.sendOrderShippedEmail(
+                    order.user.email,
+                    {
+                        orderNumber: order.orderNumber,
+                        trackingNumber: updatedOrder.trackingNumber || undefined,
+                        courier: order.biteshipCourier || order.shippingMethod,
+                    },
+                    'id',
+                );
+                this.logger.info(`📧 Order shipped email sent to: ${order.user.email}`);
+            } else if (dto.status === 'DELIVERED') {
+                await this.emailService.sendOrderDeliveredEmail(
+                    order.user.email,
+                    { orderNumber: order.orderNumber },
+                    'id',
+                );
+                this.logger.info(`📧 Order delivered email sent to: ${order.user.email}`);
+            }
+        } catch (error: any) {
+            this.logger.error('❌ Failed to send order status email', {
                 orderNumber,
                 status: dto.status,
                 error: error.message,
@@ -994,7 +1044,7 @@ export class OrderService {
             }
         });
 
-        // ✅ NEW: Send cancellation notification
+        // ✅ Send cancellation notification
         try {
             await this.notificationService.notifyOrderStatusChange(
                 order.userId,
@@ -1048,7 +1098,7 @@ export class OrderService {
             },
         });
 
-        // ✅ NEW: Send completed notification
+        // ✅ Send completed notification
         try {
             await this.notificationService.notifyOrderStatusChange(
                 order.userId,
@@ -1424,7 +1474,7 @@ export class OrderService {
     }
 
     /**
-     * ✅ Process Biteship webhook with NOTIFICATION
+     * ✅ Process Biteship webhook with NOTIFICATION + EMAIL
      */
     async processBiteshipWebhook(biteshipOrderId: string, status: string, data: any) {
         this.logger.info('📦 Processing Biteship webhook', {
@@ -1434,6 +1484,16 @@ export class OrderService {
 
         const order = await this.prisma.order.findUnique({
             where: { biteshipOrderId },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        firstName: true,
+                        lastName: true,
+                    },
+                },
+            },
         });
 
         if (!order) {
@@ -1472,12 +1532,12 @@ export class OrderService {
                 updateData.shippedAt = new Date();
             }
 
-            await this.prisma.order.update({
+            const updatedOrder = await this.prisma.order.update({
                 where: { id: order.id },
                 data: updateData,
             });
 
-            // ✅ NEW: Send notification for status change from webhook
+            // ✅ Send notification for status change from webhook
             try {
                 await this.notificationService.notifyOrderStatusChange(
                     order.userId,
@@ -1488,6 +1548,35 @@ export class OrderService {
                 );
             } catch (error: any) {
                 this.logger.error('❌ Failed to send webhook status notification', {
+                    orderNumber: order.orderNumber,
+                    status: newStatus,
+                    error: error.message,
+                });
+            }
+
+            // 👇 NEW: Send email notifications from webhook
+            try {
+                if (newStatus === 'SHIPPED') {
+                    await this.emailService.sendOrderShippedEmail(
+                        order.user.email,
+                        {
+                            orderNumber: order.orderNumber,
+                            trackingNumber: updatedOrder.trackingNumber || undefined,
+                            courier: order.biteshipCourier || order.shippingMethod,
+                        },
+                        'id',
+                    );
+                    this.logger.info(`📧 Order shipped email sent (webhook) to: ${order.user.email}`);
+                } else if (newStatus === 'DELIVERED') {
+                    await this.emailService.sendOrderDeliveredEmail(
+                        order.user.email,
+                        { orderNumber: order.orderNumber },
+                        'id',
+                    );
+                    this.logger.info(`📧 Order delivered email sent (webhook) to: ${order.user.email}`);
+                }
+            } catch (error: any) {
+                this.logger.error('❌ Failed to send webhook email notification', {
                     orderNumber: order.orderNumber,
                     status: newStatus,
                     error: error.message,
@@ -1544,7 +1633,7 @@ export class OrderService {
             },
         });
 
-        // ✅ NEW: Send notifications for auto-completed orders
+        // ✅ Send notifications for auto-completed orders
         for (const order of orders) {
             try {
                 await this.notificationService.notifyOrderStatusChange(
@@ -1608,7 +1697,7 @@ export class OrderService {
             },
         });
 
-        // ✅ NEW: Send notification for FAILED status
+        // ✅ Send notification for FAILED status
         try {
             await this.notificationService.notifyOrderStatusChange(
                 order.userId,

@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { LoginAttemptGuard } from '../common/guards/login-attempt.guard';
@@ -30,6 +31,7 @@ import { EmailService } from '../common/email.service';
     AuthService,
     LocalStorageService,
     JwtStrategy,
+    GoogleStrategy,
     EmailService,
     LoginAttemptGuard,
     {
