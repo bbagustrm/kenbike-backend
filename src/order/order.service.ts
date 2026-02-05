@@ -33,7 +33,7 @@ import {
 import { BiteshipOrderRequest } from './interfaces/shipping.interface';
 import { InvoiceService } from '../invoice/invoice.service';
 import { NotificationService } from '../notification/notification.service';
-import { EmailService } from '../common/email.service'; // 👈 NEW
+import { EmailService } from '../common/email.service';
 import { OrderStatus } from '@prisma/client';
 
 @Injectable()
@@ -48,7 +48,7 @@ export class OrderService {
         private configService: ConfigService,
         private invoiceService: InvoiceService,
         private notificationService: NotificationService,
-        private emailService: EmailService, // 👈 NEW
+        private emailService: EmailService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {
         this.taxRate = parseFloat(this.configService.get<string>('TAX_RATE') || '0.11');

@@ -3,14 +3,14 @@ import { Injectable, Inject } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
-import { NotificationService } from '../notification/notification.service'; // ✅ NEW
-import { OrderStatus } from '@prisma/client'; // ✅ NEW
+import { NotificationService } from '../notification/notification.service';
+import { OrderStatus } from '@prisma/client';
 
 @Injectable()
 export class BiteshipWebhookService {
     constructor(
         private prisma: PrismaService,
-        private notificationService: NotificationService, // ✅ NEW
+        private notificationService: NotificationService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
@@ -115,7 +115,6 @@ export class BiteshipWebhookService {
             data: updateData,
         });
 
-        // ✅ NEW: Send notification to user about status change
         try {
             await this.notificationService.notifyOrderStatusChange(
                 order.userId,

@@ -3,7 +3,7 @@
 import { z } from 'zod';
 
 /**
- * ✅ FIXED: DTO for creating order from cart (REMOVED payment_method)
+ *  DTO for creating order from cart (REMOVED payment_method)
  */
 export const CreateOrderSchema = z.object({
     // Shipping destination

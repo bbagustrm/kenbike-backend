@@ -1,5 +1,4 @@
 // src/common/email.service.ts
-// Place this file in: src/common/email.service.ts
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'winston';

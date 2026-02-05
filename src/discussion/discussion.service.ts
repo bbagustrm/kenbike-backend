@@ -2,7 +2,6 @@
 import {
     Injectable,
     NotFoundException,
-    BadRequestException,
     ForbiddenException,
     Inject,
 } from '@nestjs/common';
@@ -18,13 +17,13 @@ import {
     UpdateDiscussionReplyDto,
 } from './dto/create-discussion.dto';
 import { QueryProductDiscussionsDto, AdminQueryDiscussionDto } from './dto/query-discussion.dto';
-import { NotificationService } from '../notification/notification.service'; // ✅ NEW
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class DiscussionService {
     constructor(
         private prisma: PrismaService,
-        private notificationService: NotificationService, // ✅ NEW
+        private notificationService: NotificationService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
@@ -428,7 +427,6 @@ export class DiscussionService {
             },
         });
 
-        // ✅ NEW: Send notification to discussion owner (if not replying to own discussion)
         if (discussion.user.id !== userId) {
             try {
                 const replierName = replier
