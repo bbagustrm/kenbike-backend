@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * ✅ Custom URL validator that accepts both relative and absolute URLs
+ * Custom URL validator that accepts both relative and absolute URLs
  * Accepts:
  * - /uploads/products/uuid.webp (relative path)
  * - http://localhost:3000/uploads/products/uuid.webp (full URL dev)

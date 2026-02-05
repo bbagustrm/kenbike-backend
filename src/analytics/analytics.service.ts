@@ -15,7 +15,7 @@ import {
 @Injectable()
 export class AnalyticsService {
     private readonly geminiApiKey: string;
-    private readonly geminiApiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+    private readonly geminiApiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent';
 
     constructor(
         private prisma: PrismaService,
@@ -509,6 +509,9 @@ export class AnalyticsService {
     /**
      * AI Insights with Gemini
      */
+    /**
+     * AI Insights with Gemini
+     */
     async getAiInsights(dto: AiInsightQueryDto) {
         if (!this.geminiApiKey) {
             return {
@@ -550,10 +553,10 @@ TOP 5 PRODUK TERLARIS:
 ${topProducts.data.map((p, i) => `${i + 1}. ${p.name} - Terjual: ${p.total_sold}, Revenue: Rp ${p.estimated_revenue_idr.toLocaleString('id-ID')}`).join('\n')}
 
 PRODUK STOK RENDAH:
-${lowStock.data.map(p => `- ${p.product_name} (${p.variant_name}): ${p.stock} unit`).join('\n')}
+${lowStock.data.length > 0 ? lowStock.data.map(p => `- ${p.product_name} (${p.variant_name}): ${p.stock} unit`).join('\n') : 'Tidak ada produk stok rendah'}
 
 PROMOSI AKTIF:
-${promotions.data.map(p => `- ${p.name}: Diskon ${p.discount_percentage}, ${p.product_count} produk, sisa ${p.days_remaining} hari`).join('\n')}
+${promotions.data.length > 0 ? promotions.data.map(p => `- ${p.name}: Diskon ${p.discount_percentage}, ${p.product_count} produk, sisa ${p.days_remaining} hari`).join('\n') : 'Tidak ada promosi aktif'}
 `;
         } catch (error) {
             this.logger.error('Failed to gather context data', { error });
@@ -586,8 +589,22 @@ Gunakan data yang diberikan untuk memberikan insight yang specific dan relevan.`
                 }),
             });
 
+            // Handle rate limit
+            if (response.status === 429) {
+                const retryAfter = response.headers.get('Retry-After') || '60';
+                return {
+                    data: {
+                        query: dto.query,
+                        insight: `API sedang sibuk. Silakan coba lagi dalam ${retryAfter} detik.`,
+                        error: 'RATE_LIMITED',
+                        retry_after: parseInt(retryAfter),
+                    },
+                };
+            }
+
             if (!response.ok) {
-                throw new Error(`Gemini API error: ${response.status}`);
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(`Gemini API error: ${response.status} - ${JSON.stringify(errorData)}`);
             }
 
             const result = await response.json();
@@ -611,7 +628,6 @@ Gunakan data yang diberikan untuk memberikan insight yang specific dan relevan.`
             };
         }
     }
-
     /**
      * Get Quick AI Summary (for dashboard)
      */

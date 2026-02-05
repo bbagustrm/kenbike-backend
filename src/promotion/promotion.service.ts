@@ -20,7 +20,7 @@ import { NotificationService } from '../notification/notification.service';
 export class PromotionService {
     constructor(
         private prisma: PrismaService,
-        private notificationService: NotificationService, // ✅ NEW
+        private notificationService: NotificationService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
@@ -278,7 +278,7 @@ export class PromotionService {
     }
 
     /**
-     * ✅ CREATE PROMOTION (Admin) with NOTIFICATION option
+     * CREATE PROMOTION (Admin) with NOTIFICATION option
      */
     async createPromotion(dto: CreatePromotionDto, sendNotification: boolean = false) {
         const existingPromotion = await this.prisma.promotion.findFirst({
@@ -307,7 +307,6 @@ export class PromotionService {
 
         this.logger.info(`✅ Promotion created: ${promotion.name} (${promotion.id})`);
 
-        // ✅ NEW: Send notification to all users if requested and promotion starts now
         if (sendNotification && dto.isActive) {
             const now = new Date();
             const startDate = new Date(dto.startDate);
@@ -656,7 +655,7 @@ export class PromotionService {
     }
 
     /**
-     * ✅ AUTO ACTIVATE/DEACTIVATE PROMOTIONS (Cron Job) with NOTIFICATION
+     * AUTO ACTIVATE/DEACTIVATE PROMOTIONS (Cron Job) with NOTIFICATION
      * Runs every hour to check promotion dates
      */
     @Cron(CronExpression.EVERY_HOUR)
@@ -684,7 +683,6 @@ export class PromotionService {
             data: { isActive: true },
         });
 
-        // ✅ NEW: Send notifications for newly activated promotions
         for (const promo of promotionsToActivate) {
             try {
                 await this.notificationService.notifyPromotionStart(

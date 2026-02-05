@@ -5,7 +5,7 @@ import { NotificationController } from './notification.controller';
 import { NotificationCleanupCron } from './cron/notification-cleanup.cron';
 import { CommonModule } from '../common/common.module';
 
-@Global() // Make NotificationService available globally
+@Global()
 @Module({
   imports: [CommonModule],
   controllers: [NotificationController],

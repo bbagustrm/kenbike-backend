@@ -15,13 +15,13 @@ import { Prisma, OrderStatus } from '@prisma/client';
 import { CreateReviewDto, UpdateReviewDto } from './dto/create-review.dto';
 import { CreateReviewReplyDto, UpdateReviewReplyDto } from './dto/create-review-reply.dto';
 import { QueryProductReviewsDto, AdminQueryReviewDto } from './dto/query-review.dto';
-import { NotificationService } from '../notification/notification.service'; // ✅ NEW
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class ReviewService {
     constructor(
         private prisma: PrismaService,
-        private notificationService: NotificationService, // ✅ NEW
+        private notificationService: NotificationService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
@@ -673,7 +673,6 @@ export class ReviewService {
             },
         });
 
-        // ✅ NEW: Send notification to review owner
         try {
             const replierName = admin
                 ? `${admin.firstName} ${admin.lastName}`.trim() || admin.username

@@ -42,7 +42,7 @@ export class PaymentService {
 
     /**
      * Create payment for an order
-     * ✅ FIXED: Return existing token if still valid, or create new one
+     * Return existing token if still valid, or create new one
      */
     async createPayment(userId: string, dto: CreatePaymentDto): Promise<PaymentResponse> {
         const { order_number, payment_method } = dto;
@@ -78,7 +78,7 @@ export class PaymentService {
             );
         }
 
-        // ✅ NEW: Check if order already has a payment token
+        // Check if order already has a payment token
         if (order.paymentId) {
             // Check if payment is still valid (within 24 hours for Midtrans, 3 hours for PayPal)
             const paymentCreatedAt = order.updatedAt || order.createdAt;
@@ -157,7 +157,7 @@ export class PaymentService {
     }
 
     /**
-     * ✅ FIXED: Create Midtrans Snap payment with proper item_details calculation
+     * Create Midtrans Snap payment with proper item_details calculation
      */
     private async createMidtransPayment(order: any): Promise<PaymentResponse> {
         if (!this.midtransService.isConfigured()) {
@@ -169,7 +169,7 @@ export class PaymentService {
             throw new BadRequestException('Midtrans only supports IDR currency');
         }
 
-        // ✅ FIX: Build item_details properly to match gross_amount
+        // Build item_details properly to match gross_amount
         const item_details: any[] = [];
 
         // Add order items (with discount already applied)
@@ -205,7 +205,7 @@ export class PaymentService {
             });
         }
 
-        // ✅ Calculate total from item_details for verification
+        // Calculate total from item_details for verification
         const calculatedTotal = item_details.reduce((sum, item) => {
             return sum + (item.price * item.quantity);
         }, 0);
@@ -556,12 +556,6 @@ export class PaymentService {
             return;
         }
 
-        // ✅ IMPORTANT: Call OrderService.markOrderAsPaid()
-        // This will update order status to PAID AND create Biteship order
-        // We inject OrderService but need to avoid circular dependency
-
-        // For now, just update status directly
-        // OrderService.markOrderAsPaid() will be called from webhook controller
         await this.prisma.order.update({
             where: { id: order.id },
             data: {
@@ -655,7 +649,7 @@ export class PaymentService {
     }
 
     /**
-     * ✅ NEW: Mark order as paid (called by PayPal webhook)
+     *  Mark order as paid (called by PayPal webhook)
      */
     async markOrderAsPaid(
         orderNumber: string,
@@ -697,7 +691,7 @@ export class PaymentService {
     }
 
     /**
-     * ✅ NEW: Mark order as failed (called by PayPal webhook)
+     *  Mark order as failed (called by PayPal webhook)
      */
     async markOrderAsFailed(orderNumber: string, reason: string): Promise<void> {
         this.logger.info('❌ Marking order as failed', {
