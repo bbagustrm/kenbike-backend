@@ -50,7 +50,7 @@ export class InvoiceService {
         };
 
         this.assetsPath = path.join(process.cwd(), 'assets');
-        this.frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'https://kenbike.store';
+        this.frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'https://kenbikestore.com';
     }
 
     /**

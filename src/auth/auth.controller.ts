@@ -67,7 +67,7 @@ export class AuthController {
             httpOnly: true,
             secure: true,
             sameSite: 'lax' as const,
-            domain: '.kenbike.store',
+            domain: '.kenbikestore.com',
             path: '/',
         };
     }
