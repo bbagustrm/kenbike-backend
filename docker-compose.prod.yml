@@ -1,0 +1,141 @@
+version: "3.8"
+
+# ============================================
+# PRODUCTION DOCKER COMPOSE
+# ============================================
+# Usage: docker-compose -f docker-compose.prod.yml up -d
+# or: npm run docker:prod
+# ============================================
+
+services:
+  # ============================================
+  # PostgreSQL Database
+  # ============================================
+  db:
+    image: postgres:15-alpine
+    container_name: kenbike-db-prod
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_INITDB_ARGS: "-c shared_preload_libraries=pg_stat_statements"
+    ports:
+      # Don't expose to outside in production (only internal network)
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - kenbike_prod_pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    networks:
+      - kenbike-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Security: limit resources
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # ============================================
+  # Redis Cache
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: kenbike-redis-prod
+    restart: always
+    ports:
+      # Don't expose to outside in production
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - kenbike_prod_redis:/data
+    command: >
+      redis-server 
+      --appendonly yes 
+      --maxmemory 512mb 
+      --maxmemory-policy allkeys-lru
+      --protected-mode yes
+    networks:
+      - kenbike-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Security: limit resources
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # ============================================
+  # NestJS Backend Application
+  # ============================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: kenbike-backend-prod
+    restart: always
+    ports:
+      # Expose to Nginx reverse proxy
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      # Override with service names
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      NODE_ENV: production
+    volumes:
+      # Only persist uploads (no source code mounting)
+      - ./uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - kenbike-network
+    # Security: limit resources
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  kenbike_prod_pgdata:
+    driver: local
+  kenbike_prod_redis:
+    driver: local
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  kenbike-network:
+    driver: bridge

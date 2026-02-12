@@ -1,0 +1,116 @@
+version: "3.8"
+
+# ============================================
+# DEVELOPMENT DOCKER COMPOSE
+# ============================================
+# Usage: docker-compose -f docker-compose.dev.yml up
+# or: npm run docker:dev
+# ============================================
+
+services:
+  # ============================================
+  # PostgreSQL Database
+  # ============================================
+  db:
+    image: postgres:15-alpine
+    container_name: kenbike-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kenbike_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kenbike_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-kenbike_dev}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+    ports:
+      - "5432:5432"
+    volumes:
+      - kenbike_dev_pgdata:/var/lib/postgresql/data
+      # Init script to enable pg_stat_statements
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    networks:
+      - kenbike-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kenbike_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis Cache
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: kenbike-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - kenbike_dev_redis:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - kenbike-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # NestJS Backend Application
+  # ============================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: kenbike-backend-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      # Debugging port (optional)
+      - "9229:9229"
+    env_file:
+      - .env
+    environment:
+      # Override with service names
+      DATABASE_URL: postgresql://${POSTGRES_USER:-kenbike_dev}:${POSTGRES_PASSWORD:-kenbike_dev_password}@db:5432/${POSTGRES_DB:-kenbike_dev}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      # ✅ Hot-reload: Mount source code
+      - ./src:/app/src:delegated
+      - ./prisma:/app/prisma:delegated
+
+      # ✅ Preserve node_modules (don't overwrite from host)
+      - /app/node_modules
+
+      # ✅ Persist uploads
+      - ./uploads:/app/uploads:delegated
+
+      # ✅ Mount package.json for dependency changes
+      - ./package.json:/app/package.json:delegated
+      - ./package-lock.json:/app/package-lock.json:delegated
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - kenbike-network
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  kenbike_dev_pgdata:
+    driver: local
+  kenbike_dev_redis:
+    driver: local
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  kenbike-network:
+    driver: bridge

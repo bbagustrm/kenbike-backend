@@ -1,4 +1,4 @@
-import { sign, verify } from 'jsonwebtoken';
+import { sign, verify, SignOptions } from 'jsonwebtoken';
 
 export interface JwtPayload {
     id: string;
@@ -12,21 +12,30 @@ export class TokenUtil {
      * Generate JWT Access Token
      */
     static generateAccessToken(payload: JwtPayload, secret: string, expiresIn: string): string {
-        return sign(payload, secret, { expiresIn });
+        const options: SignOptions = {
+            expiresIn: expiresIn as any,
+        };
+        return sign(payload, secret, options);
     }
 
     /**
      * Generate JWT Refresh Token
      */
     static generateRefreshToken(payload: JwtPayload, secret: string, expiresIn: string): string {
-        return sign(payload, secret, { expiresIn });
+        const options: SignOptions = {
+            expiresIn: expiresIn as any,
+        };
+        return sign(payload, secret, options);
     }
 
     /**
      * Generate Password Reset Token
      */
     static generateResetPasswordToken(email: string, secret: string, expiresIn: string): string {
-        return sign({ email, type: 'password-reset' }, secret, { expiresIn });
+        const options: SignOptions = {
+            expiresIn: expiresIn as any,
+        };
+        return sign({ email, type: 'password-reset' }, secret, options);
     }
 
     /**

@@ -17,7 +17,25 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+
+    "docker:dev": "docker-compose -f docker-compose.dev.yml up",
+    "docker:dev:build": "docker-compose -f docker-compose.dev.yml up --build",
+    "docker:dev:down": "docker-compose -f docker-compose.dev.yml down",
+    "docker:dev:clean": "docker-compose -f docker-compose.dev.yml down -v",
+    "docker:dev:logs": "docker-compose -f docker-compose.dev.yml logs -f app",
+
+    "docker:prod": "docker-compose -f docker-compose.prod.yml up -d",
+    "docker:prod:build": "docker-compose -f docker-compose.prod.yml up --build -d",
+    "docker:prod:down": "docker-compose -f docker-compose.prod.yml down",
+    "docker:prod:clean": "docker-compose -f docker-compose.prod.yml down -v",
+    "docker:prod:logs": "docker-compose -f docker-compose.prod.yml logs -f app",
+
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:prod": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
@@ -28,6 +46,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.6",
     "@nestjs/schedule": "^6.0.1",
+    "@nestjs/terminus": "^10.2.3",
     "@nestjs/throttler": "^6.4.0",
     "@paypal/checkout-server-sdk": "^1.0.3",
     "@prisma/client": "^6.16.2",
@@ -41,6 +60,7 @@
     "cookie-parser": "^1.4.7",
     "cron": "^4.3.3",
     "helmet": "^8.1.0",
+    "ioredis": "^5.4.1",
     "midtrans-client": "^1.4.3",
     "multer": "^2.0.2",
     "nest-winston": "^1.10.2",
@@ -105,5 +125,8 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   }
 }

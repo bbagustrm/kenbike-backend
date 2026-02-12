@@ -1,0 +1,53 @@
+# ============================================
+# DEVELOPMENT DOCKERFILE
+# ============================================
+# Usage: docker-compose -f docker-compose.dev.yml up
+# Features:
+# - Hot reload enabled (source code mounted as volume)
+# - All dependencies (dev + prod)
+# - Debugging ports exposed
+# ============================================
+
+FROM node:20-alpine
+
+# Install necessary build tools for native dependencies
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    curl \
+    bash
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Install ALL dependencies (including devDependencies)
+# Use npm install for development (package-lock.json might not be in .dockerignore)
+RUN npm install --legacy-peer-deps
+
+# Generate Prisma Client
+RUN npx prisma generate
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Create uploads directory
+RUN mkdir -p /app/uploads
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:3000/api/v1/health || exit 1
+
+# Use entrypoint for automatic migration
+ENTRYPOINT ["docker-entrypoint.sh"]
+
+# Development command (hot-reload)
+CMD ["npm", "run", "start:dev"]
