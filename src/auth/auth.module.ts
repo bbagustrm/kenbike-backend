@@ -21,7 +21,7 @@ import { EmailService } from '../common/email.service';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('jwt.secret'),
         signOptions: {
-          expiresIn: configService.get<string>('jwt.accessTokenExpiry'),
+          expiresIn: (configService.get<string>('jwt.accessTokenExpiry') || '15m') as any,
         },
       }),
     }),

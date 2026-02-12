@@ -9,6 +9,7 @@ import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { ResponseInterceptor } from './interceptors/response.interceptor';
 import { BlacklistTokenMiddleware } from './middleware/blacklist-token.middleware';
 import { DDoSProtectionMiddleware } from './middleware/ddos-protection.middleware';
+import { RedisModule } from './redis/redis.module';
 import appConfig from '../config/app.config';
 import jwtConfig from '../config/jwt.config';
 import databaseConfig from '../config/database.config';
@@ -43,6 +44,8 @@ import databaseConfig from '../config/database.config';
             isGlobal: true,
             load: [appConfig, jwtConfig, databaseConfig],
         }),
+        RedisModule,
+        // HealthModule should be imported in app.module.ts, not here
     ],
     providers: [
         PrismaService,
@@ -62,6 +65,8 @@ import databaseConfig from '../config/database.config';
         ValidationService,
         DDoSProtectionMiddleware, // ✅ Export for monitoring
     ],
+    // AnalyticsController should be in AnalyticsModule, not here
+    controllers: [],
 })
 export class CommonModule implements NestModule {
     configure(consumer: MiddlewareConsumer) {

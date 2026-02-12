@@ -1,0 +1,89 @@
+# ============================================
+# PRODUCTION DOCKERFILE (Multi-stage build)
+# ============================================
+# Usage: docker-compose -f docker-compose.prod.yml up
+# Features:
+# - Multi-stage build for smaller image
+# - Only production dependencies
+# - Optimized layers
+# - Security hardening
+# ============================================
+
+# ============================================
+# Stage 1: Builder
+# ============================================
+FROM node:20-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Install ALL dependencies (needed for build)
+RUN npm ci
+
+# Generate Prisma Client
+RUN npx prisma generate
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN npm run build
+
+# Remove dev dependencies
+RUN npm prune --production
+
+# ============================================
+# Stage 2: Production
+# ============================================
+FROM node:20-alpine AS production
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    curl \
+    bash \
+    dumb-init
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nestjs -u 1001
+
+WORKDIR /app
+
+# Copy built application from builder
+COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nestjs:nodejs /app/package*.json ./
+COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
+
+# Copy entrypoint script
+COPY --chown=nestjs:nodejs docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Create uploads directory with proper permissions
+RUN mkdir -p /app/uploads && \
+    chown -R nestjs:nodejs /app/uploads
+
+# Switch to non-root user
+USER nestjs
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:3000/api/v1/health || exit 1
+
+# Use entrypoint for automatic migration
+ENTRYPOINT ["docker-entrypoint.sh"]
+
+# Production command
+CMD ["dumb-init", "node", "dist/src/main"]

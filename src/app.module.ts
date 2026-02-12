@@ -22,6 +22,9 @@ import { DiscussionModule } from './discussion/discussion.module';
 import {ReviewModule} from "./review/review.module";
 import { NotificationModule } from './notification/notification.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { ConfigModule } from '@nestjs/config';
+import { RedisModule } from './common/redis/redis.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -60,6 +63,8 @@ import { AnalyticsModule } from './analytics/analytics.module';
     DiscussionModule,
     NotificationModule,
     AnalyticsModule,
+    RedisModule,
+    HealthModule,
   ],
   controllers: [AppController, DiscussionController],
   providers: [

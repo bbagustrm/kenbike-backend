@@ -1,5 +1,3 @@
-// src/analytics/analytics.controller.ts
-
 import {
     Controller,
     Get,
@@ -18,11 +16,21 @@ import {
     GetProductAnalyticsSchema,
     AiInsightQuerySchema,
 } from './dto/analytics.dto';
+import { RedisService } from '../common/redis/redis.service';
+import { PrismaService } from '../common/prisma.service';
 
 @Controller('analytics')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AnalyticsController {
-    constructor(private analyticsService: AnalyticsService) {}
+    constructor(
+        private analyticsService: AnalyticsService,
+        private redisService: RedisService,
+        private prismaService: PrismaService,
+    ) {}
+
+    // ==========================================
+    // EXISTING ANALYTICS ENDPOINTS
+    // ==========================================
 
     /**
      * Get Dashboard Overview
@@ -122,5 +130,100 @@ export class AnalyticsController {
     @Roles('OWNER')
     async getQuickAiSummary() {
         return this.analyticsService.getQuickAiSummary();
+    }
+
+    // ==========================================
+    // REDIS & DATABASE PERFORMANCE MONITORING
+    // ==========================================
+
+    /**
+     * Get cache statistics
+     * GET /api/v1/analytics/cache/stats
+     */
+    @Get('cache/stats')
+    @Roles('ADMIN', 'OWNER')
+    getCacheStats() {
+        return {
+            success: true,
+            data: this.redisService.getStats(),
+            timestamp: new Date().toISOString(),
+        };
+    }
+
+    /**
+     * Reset cache statistics
+     * POST /api/v1/analytics/cache/stats/reset
+     */
+    @Post('cache/stats/reset')
+    @Roles('ADMIN', 'OWNER')
+    resetCacheStats() {
+        this.redisService.resetStats();
+        return {
+            success: true,
+            message: 'Cache statistics reset successfully',
+        };
+    }
+
+    /**
+     * Get database query statistics
+     * GET /api/v1/analytics/database/stats
+     */
+    @Get('database/stats')
+    @Roles('ADMIN', 'OWNER')
+    getDatabaseStats() {
+        return {
+            success: true,
+            data: this.prismaService.getQueryStats(),
+            timestamp: new Date().toISOString(),
+        };
+    }
+
+    /**
+     * Reset database query statistics
+     * POST /api/v1/analytics/database/stats/reset
+     */
+    @Post('database/stats/reset')
+    @Roles('ADMIN', 'OWNER')
+    resetDatabaseStats() {
+        this.prismaService.resetQueryStats();
+        return {
+            success: true,
+            message: 'Database statistics reset successfully',
+        };
+    }
+
+    /**
+     * Get combined performance metrics
+     * GET /api/v1/analytics/performance
+     */
+    @Get('performance')
+    @Roles('ADMIN', 'OWNER')
+    getPerformanceMetrics() {
+        const cacheStats = this.redisService.getStats();
+        const dbStats = this.prismaService.getQueryStats();
+
+        return {
+            success: true,
+            data: {
+                cache: cacheStats,
+                database: dbStats,
+                cacheEnabled: this.redisService.isCacheEnabled(),
+            },
+            timestamp: new Date().toISOString(),
+        };
+    }
+
+    /**
+     * Clear all cache
+     * POST /api/v1/analytics/cache/clear
+     */
+    @Post('cache/clear')
+    @Roles('OWNER')
+    async clearCache() {
+        await this.redisService.reset();
+        return {
+            success: true,
+            message: 'All cache cleared successfully',
+        };
     }
 }
