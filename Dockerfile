@@ -72,9 +72,16 @@ COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
 COPY --chown=nestjs:nodejs docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Create uploads and logs directories with proper permissions
-RUN mkdir -p /app/uploads /app/logs && \
-    chown -R nestjs:nodejs /app/uploads /app/logs
+# Create all necessary directories with proper permissions
+RUN mkdir -p \
+    /app/uploads/profiles \
+    /app/uploads/products \
+    /app/uploads/variants \
+    /app/uploads/gallery \
+    /app/uploads/reviews \
+    /app/logs && \
+    chown -R nestjs:nodejs /app/uploads /app/logs && \
+    chmod -R 755 /app/uploads /app/logs
 
 # Switch to non-root user
 USER nestjs
