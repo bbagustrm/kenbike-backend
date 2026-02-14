@@ -85,10 +85,10 @@ echo "============================================"
 
 if [ "$NODE_ENV" = "production" ]; then
   echo "🔧 Production mode: Running deploy migration..."
-  npx prisma migrate deploy
+  npx prisma@6.19.2 migrate deploy
 else
   echo "🔧 Development mode: Running dev migration..."
-  npx prisma migrate dev --skip-seed || echo "⚠️  Migration failed, continuing..."
+  npx prisma@6.19.2 migrate dev --skip-seed || echo "⚠️  Migration failed, continuing..."
 fi
 
 echo "✅ Migrations completed!"
@@ -97,7 +97,7 @@ echo "✅ Migrations completed!"
 echo "============================================"
 echo "🔨 Generating Prisma Client..."
 echo "============================================"
-npx prisma generate
+npx prisma@6.19.2 generate
 echo "✅ Prisma Client generated!"
 
 # Seed database (only in development)
@@ -105,7 +105,7 @@ if [ "$NODE_ENV" != "production" ]; then
   echo "============================================"
   echo "🌱 Seeding database (development only)..."
   echo "============================================"
-  npx prisma db seed || echo "⚠️  No seed script found or seed failed"
+  npx prisma@6.19.2 db seed || echo "⚠️  No seed script found or seed failed"
 fi
 
 echo "============================================"
