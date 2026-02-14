@@ -71,7 +71,7 @@ services:
       # Debugging port (optional)
       - "9229:9229"
     env_file:
-      - .env
+      - .env.docker
     environment:
       # Override with service names
       DATABASE_URL: postgresql://${POSTGRES_USER:-kenbike_dev}:${POSTGRES_PASSWORD:-kenbike_dev_password}@db:5432/${POSTGRES_DB:-kenbike_dev}
@@ -81,6 +81,11 @@ services:
       # ✅ Hot-reload: Mount source code
       - ./src:/app/src:delegated
       - ./prisma:/app/prisma:delegated
+
+      # ✅ Mount config files individually
+      - ./tsconfig.json:/app/tsconfig.json:delegated
+      - ./tsconfig.build.json:/app/tsconfig.build.json:delegated
+      - ./nest-cli.json:/app/nest-cli.json:delegated
 
       # ✅ Preserve node_modules (don't overwrite from host)
       - /app/node_modules
