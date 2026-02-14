@@ -30,6 +30,9 @@ COPY prisma ./prisma/
 # Use --legacy-peer-deps to avoid peer dependency conflicts
 RUN npm ci --legacy-peer-deps
 
+# Lock Prisma to specific version to prevent v7 auto-install
+RUN npm install -g prisma@6.16.2 @prisma/client@6.16.2
+
 # Generate Prisma Client
 RUN npx prisma generate
 
@@ -69,9 +72,9 @@ COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
 COPY --chown=nestjs:nodejs docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Create uploads directory with proper permissions
-RUN mkdir -p /app/uploads && \
-    chown -R nestjs:nodejs /app/uploads
+# Create uploads and logs directories with proper permissions
+RUN mkdir -p /app/uploads /app/logs && \
+    chown -R nestjs:nodejs /app/uploads /app/logs
 
 # Switch to non-root user
 USER nestjs
