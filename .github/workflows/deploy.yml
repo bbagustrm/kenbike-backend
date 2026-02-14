@@ -91,13 +91,16 @@ jobs:
             # Clean up old images
             docker image prune -f
             
-            # Health check
+            # Health check with proper exit handling
             sleep 30
-            if curl -s http://localhost:3000/api/v1/health 2>/dev/null | grep -q "ok\|healthy"; then
+            echo "🔍 Checking backend health..."
+            if curl -s http://localhost:3000/api/v1/health 2>/dev/null | grep -q "ok"; then
               echo "✅ Backend deployment successful!"
+              exit 0
             else
-              echo "⚠️ Checking container status..."
+              echo "⚠️ Health check failed. Checking container status..."
               docker compose logs --tail=50 backend
+              exit 1
             fi
 
       - name: Deployment Summary
