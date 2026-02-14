@@ -1,7 +1,7 @@
 # ============================================
 # PRODUCTION DOCKERFILE (Multi-stage build)
 # ============================================
-# Usage: docker-compose -f docker-compose.prod.yml up
+# Usage: GitHub Actions CI/CD
 # Features:
 # - Multi-stage build for smaller image
 # - Only production dependencies
@@ -27,7 +27,8 @@ COPY package*.json ./
 COPY prisma ./prisma/
 
 # Install ALL dependencies (needed for build)
-RUN npm ci
+# Use --legacy-peer-deps to avoid peer dependency conflicts
+RUN npm ci --legacy-peer-deps
 
 # Generate Prisma Client
 RUN npx prisma generate
@@ -39,7 +40,7 @@ COPY . .
 RUN npm run build
 
 # Remove dev dependencies
-RUN npm prune --production
+RUN npm prune --production --legacy-peer-deps
 
 # ============================================
 # Stage 2: Production

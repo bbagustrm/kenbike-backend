@@ -84,7 +84,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile.prod
+      dockerfile: Dockerfile
     container_name: kenbike-backend-prod
     restart: always
     ports:
