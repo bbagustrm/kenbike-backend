@@ -92,7 +92,7 @@ jobs:
             docker image prune -f
             
             # Health check with proper exit handling
-            sleep 30
+            sleep 90
             echo "🔍 Checking backend health..."
             if curl -s http://localhost:3000/api/v1/health 2>/dev/null | grep -q "ok"; then
               echo "✅ Backend deployment successful!"
