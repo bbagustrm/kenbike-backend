@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",  // Force CommonJS for ts-node
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  }
+}
