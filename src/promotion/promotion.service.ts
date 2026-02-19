@@ -4,6 +4,7 @@ import {
     ConflictException,
     BadRequestException,
     Inject,
+    OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { PaginationUtil } from '../utils/pagination.util';
@@ -15,17 +16,58 @@ import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Prisma } from '@prisma/client';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { NotificationService } from '../notification/notification.service';
+import { RedisService } from '../common/redis/redis.service';
 
 @Injectable()
-export class PromotionService {
+export class PromotionService implements OnModuleInit {
+    // Static cache key for active promotions (no params = static key)
+    private static readonly ACTIVE_PROMOTIONS_KEY = 'promotions:active';
+
     constructor(
         private prisma: PrismaService,
         private notificationService: NotificationService,
+        private redisService: RedisService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
+    // ==========================================
+    // CACHE WARMING ON STARTUP
+    // ==========================================
+
+    async onModuleInit() {
+        if (!this.redisService.isCacheEnabled()) return;
+
+        try {
+            this.logger.info('🔥 Warming promotion cache...');
+            await this.getActivePromotions();
+            this.logger.info('✅ Promotion cache warmed successfully');
+        } catch (error) {
+            this.logger.warn('⚠️  Promotion cache warming failed (non-critical)', { error });
+        }
+    }
+
+    // ==========================================
+    // CACHE HELPERS
+    // ==========================================
+
+    /**
+     * Invalidate active promotions cache
+     * Also invalidates product list cache (products embed promotion data)
+     */
+    private async invalidatePromotionCaches(): Promise<void> {
+        await Promise.all([
+            this.redisService.del(PromotionService.ACTIVE_PROMOTIONS_KEY),
+            this.redisService.delByPattern('products:list:*'),
+        ]);
+    }
+
+    // ==========================================
+    // READ METHODS
+    // ==========================================
+
     /**
      * GET ALL PROMOTIONS (Public & Admin)
+     * No caching on list - complex filters, mostly admin use
      */
     async getAllPromotions(dto: GetPromotionsDto, isAdmin: boolean = false) {
         const {
@@ -123,8 +165,14 @@ export class PromotionService {
 
     /**
      * GET ACTIVE PROMOTIONS (Public)
+     * Caching: promotions:active (static key), TTL 300s
      */
     async getActivePromotions() {
+        const cacheKey = PromotionService.ACTIVE_PROMOTIONS_KEY;
+
+        const cached = await this.redisService.get<any>(cacheKey);
+        if (cached) return cached;
+
         const now = new Date();
 
         const promotions = await this.prisma.promotion.findMany({
@@ -164,7 +212,11 @@ export class PromotionService {
             ),
         }));
 
-        return { data };
+        const result = { data };
+        const ttl = this.redisService.getTTL('promotions');
+        await this.redisService.set(cacheKey, result, ttl);
+
+        return result;
     }
 
     /**
@@ -277,8 +329,13 @@ export class PromotionService {
         };
     }
 
+    // ==========================================
+    // WRITE METHODS (WITH CACHE INVALIDATION)
+    // ==========================================
+
     /**
-     * CREATE PROMOTION (Admin) with NOTIFICATION option
+     * CREATE PROMOTION (Admin)
+     * Invalidates: promotions:active
      */
     async createPromotion(dto: CreatePromotionDto, sendNotification: boolean = false) {
         const existingPromotion = await this.prisma.promotion.findFirst({
@@ -311,7 +368,6 @@ export class PromotionService {
             const now = new Date();
             const startDate = new Date(dto.startDate);
 
-            // Only notify if promotion is starting now or already started
             if (startDate <= now) {
                 try {
                     await this.notificationService.notifyPromotionStart(
@@ -330,11 +386,15 @@ export class PromotionService {
             }
         }
 
+        // Invalidate promotion cache (new promotion may be active)
+        await this.invalidatePromotionCaches();
+
         return this.getPromotionById(promotion.id, true);
     }
 
     /**
      * UPDATE PROMOTION (Admin)
+     * Invalidates: promotions:active, products:list:*
      */
     async updatePromotion(id: string, dto: UpdatePromotionDto) {
         const existingPromotion = await this.prisma.promotion.findUnique({
@@ -384,11 +444,15 @@ export class PromotionService {
 
         this.logger.info(`✅ Promotion updated: ${promotion.name} (${promotion.id})`);
 
+        // Invalidate caches (discount/dates changed affect product prices in list)
+        await this.invalidatePromotionCaches();
+
         return this.getPromotionById(promotion.id, true);
     }
 
     /**
      * DELETE PROMOTION (Admin) - Soft Delete
+     * Invalidates: promotions:active, products:list:*
      */
     async deletePromotion(id: string) {
         const promotion = await this.prisma.promotion.findUnique({
@@ -416,6 +480,9 @@ export class PromotionService {
 
         this.logger.info(`🗑️ Promotion soft deleted: ${promotion.name} (${id})`);
 
+        // Invalidate caches
+        await this.invalidatePromotionCaches();
+
         return {
             message: 'Promotion deleted successfully',
             data: { id, deletedAt: new Date() },
@@ -424,6 +491,7 @@ export class PromotionService {
 
     /**
      * RESTORE PROMOTION (Admin)
+     * Invalidates: promotions:active
      */
     async restorePromotion(id: string) {
         const promotion = await this.prisma.promotion.findUnique({
@@ -445,11 +513,15 @@ export class PromotionService {
 
         this.logger.info(`♻️ Promotion restored: ${promotion.name} (${id})`);
 
+        // Invalidate caches
+        await this.invalidatePromotionCaches();
+
         return this.getPromotionById(id, true);
     }
 
     /**
-     * HARD DELETE PROMOTION (Admin) - Permanent Delete
+     * HARD DELETE PROMOTION (Admin)
+     * Invalidates: promotions:active, products:list:*
      */
     async hardDeletePromotion(id: string) {
         const promotion = await this.prisma.promotion.findUnique({
@@ -478,6 +550,9 @@ export class PromotionService {
 
         this.logger.info(`💀 Promotion permanently deleted: ${promotion.name} (${id})`);
 
+        // Invalidate caches
+        await this.invalidatePromotionCaches();
+
         return {
             message: 'Promotion permanently deleted',
             data: { id },
@@ -486,6 +561,7 @@ export class PromotionService {
 
     /**
      * TOGGLE PROMOTION ACTIVE STATUS (Admin)
+     * Invalidates: promotions:active, products:list:*
      */
     async togglePromotionActive(id: string) {
         const promotion = await this.prisma.promotion.findUnique({
@@ -507,6 +583,9 @@ export class PromotionService {
             `🔄 Promotion active status toggled: ${promotion.name} (${updated.isActive})`,
         );
 
+        // Invalidate caches
+        await this.invalidatePromotionCaches();
+
         return {
             message: 'Promotion status updated',
             data: {
@@ -518,6 +597,7 @@ export class PromotionService {
 
     /**
      * ASSIGN PRODUCT TO PROMOTION (Admin)
+     * Invalidates: promotions:active, products:list:*, product:{slug}
      */
     async assignProductToPromotion(promotionId: string, productId: string) {
         const promotion = await this.prisma.promotion.findUnique({
@@ -549,6 +629,12 @@ export class PromotionService {
             `✅ Product ${product.name} assigned to promotion ${promotion.name}`,
         );
 
+        // Invalidate promotion cache and the specific product's cache
+        await Promise.all([
+            this.invalidatePromotionCaches(),
+            this.redisService.del(`product:${product.slug}`),
+        ]);
+
         return {
             message: 'Product assigned to promotion successfully',
             data: {
@@ -564,6 +650,7 @@ export class PromotionService {
 
     /**
      * REMOVE PRODUCT FROM PROMOTION (Admin)
+     * Invalidates: promotions:active, products:list:*, product:{slug}
      */
     async removeProductFromPromotion(promotionId: string, productId: string) {
         const product = await this.prisma.product.findUnique({
@@ -585,6 +672,12 @@ export class PromotionService {
 
         this.logger.info(`✅ Product removed from promotion`);
 
+        // Invalidate caches
+        await Promise.all([
+            this.invalidatePromotionCaches(),
+            this.redisService.del(`product:${product.slug}`),
+        ]);
+
         return {
             message: 'Product removed from promotion successfully',
         };
@@ -592,6 +685,7 @@ export class PromotionService {
 
     /**
      * BULK ASSIGN PRODUCTS TO PROMOTION (Admin)
+     * Invalidates: promotions:active, products:list:*
      */
     async bulkAssignProducts(promotionId: string, productIds: string[]) {
         const promotion = await this.prisma.promotion.findUnique({
@@ -610,6 +704,7 @@ export class PromotionService {
             select: {
                 id: true,
                 name: true,
+                slug: true,
                 promotionId: true,
             },
         });
@@ -643,6 +738,13 @@ export class PromotionService {
             `✅ ${result.count} products assigned to promotion ${promotion.name}`,
         );
 
+        // Invalidate caches for all affected product slugs + promotion
+        const invalidatePromises = [
+            this.invalidatePromotionCaches(),
+            ...products.map(p => this.redisService.del(`product:${p.slug}`)),
+        ];
+        await Promise.all(invalidatePromises);
+
         return {
             message: `${result.count} products assigned to promotion successfully`,
             data: {
@@ -655,14 +757,13 @@ export class PromotionService {
     }
 
     /**
-     * AUTO ACTIVATE/DEACTIVATE PROMOTIONS (Cron Job) with NOTIFICATION
-     * Runs every hour to check promotion dates
+     * AUTO ACTIVATE/DEACTIVATE PROMOTIONS (Cron Job)
+     * Runs every hour - MUST invalidate cache after status changes
      */
     @Cron(CronExpression.EVERY_HOUR)
     async autoUpdatePromotionStatus() {
         const now = new Date();
 
-        // Find promotions that are about to be activated
         const promotionsToActivate = await this.prisma.promotion.findMany({
             where: {
                 isActive: false,
@@ -672,7 +773,6 @@ export class PromotionService {
             },
         });
 
-        // Activate promotions that should start
         const toActivate = await this.prisma.promotion.updateMany({
             where: {
                 isActive: false,
@@ -700,7 +800,6 @@ export class PromotionService {
             }
         }
 
-        // Deactivate expired promotions
         const toDeactivate = await this.prisma.promotion.updateMany({
             where: {
                 isActive: true,
@@ -737,6 +836,10 @@ export class PromotionService {
             this.logger.info(
                 `🔄 Auto-updated promotions: ${toActivate.count} activated, ${toDeactivate.count} deactivated, ${productsUpdated} products cleared`,
             );
+
+            // ✅ Invalidate caches when promotion statuses change
+            await this.invalidatePromotionCaches();
+            this.logger.info('🗑️ Promotion & product list caches invalidated by cron job');
         }
 
         return {

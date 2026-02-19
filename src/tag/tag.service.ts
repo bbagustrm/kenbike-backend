@@ -4,6 +4,7 @@ import {
     ConflictException,
     BadRequestException,
     Inject,
+    OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { PaginationUtil } from '../utils/pagination.util';
@@ -14,40 +15,108 @@ import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Prisma } from '@prisma/client';
 import { ProductService } from '../product/product.service';
+import { RedisService } from '../common/redis/redis.service';
+import { createHash } from 'crypto';
 
 @Injectable()
-export class TagService {
+export class TagService implements OnModuleInit {
     constructor(
         private prisma: PrismaService,
         private productService: ProductService,
+        private redisService: RedisService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
+    // ==========================================
+    // CACHE WARMING ON STARTUP
+    // ==========================================
+
+    async onModuleInit() {
+        if (!this.redisService.isCacheEnabled()) return;
+
+        try {
+            this.logger.info('🔥 Warming tag cache...');
+
+            const defaultDto: GetTagsDto = {
+                page: 1,
+                limit: 20,
+                sortBy: 'name',
+                order: 'asc',
+                includeDeleted: false,
+                isActive: undefined,
+            };
+            await this.getAllTags(defaultDto, false);
+
+            this.logger.info('✅ Tag cache warmed successfully');
+        } catch (error) {
+            this.logger.warn('⚠️  Tag cache warming failed (non-critical)', { error });
+        }
+    }
+
+    // ==========================================
+    // CACHE HELPERS
+    // ==========================================
+
+    private hashParams(params: any): string {
+        return createHash('md5').update(JSON.stringify(params)).digest('hex');
+    }
+
+    private buildTagListKey(dto: GetTagsDto): string {
+        return `tags:list:${this.hashParams(dto)}`;
+    }
+
+    /**
+     * Invalidate all tag-related caches
+     * Tags don't affect product list cache (products embed tag data but
+     * tag mutations are rare — still invalidate products:list for consistency)
+     */
+    async invalidateTagCaches(): Promise<void> {
+        await this.redisService.delByPattern('tags:list:*');
+    }
+
+    // ==========================================
+    // READ METHODS (WITH CACHING)
+    // ==========================================
+
     /**
      * GET ALL TAGS (Public & Admin)
+     * Caching: Public calls only (isAdmin = false)
      */
     async getAllTags(dto: GetTagsDto, isAdmin: boolean = false) {
+        if (!isAdmin) {
+            const cacheKey = this.buildTagListKey(dto);
+            const cached = await this.redisService.get<any>(cacheKey);
+            if (cached) return cached;
+
+            const result = await this._fetchAllTags(dto, false);
+            const ttl = this.redisService.getTTL('tags');
+            await this.redisService.set(cacheKey, result, ttl);
+            return result;
+        }
+
+        return this._fetchAllTags(dto, true);
+    }
+
+    /**
+     * Internal: actual DB query for getAllTags
+     */
+    private async _fetchAllTags(dto: GetTagsDto, isAdmin: boolean) {
         const { page, limit, search, isActive, sortBy, order, includeDeleted } = dto;
 
-        // Validate pagination
         const { page: validPage, limit: validLimit } = PaginationUtil.validateParams(page, limit);
 
-        // Build where clause
         const where: Prisma.TagWhereInput = {};
 
-        // Soft delete filter
         if (!isAdmin || !includeDeleted) {
             where.deletedAt = null;
         }
 
-        // Active filter
         if (!isAdmin) {
-            where.isActive = true; // Public only
+            where.isActive = true;
         } else if (isActive !== undefined) {
-            where.isActive = isActive; // Admin optional filter
+            where.isActive = isActive;
         }
 
-        // Search filter
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
@@ -55,10 +124,8 @@ export class TagService {
             ];
         }
 
-        // Get total count
         const total = await this.prisma.tag.count({ where });
 
-        // Prepare orderBy
         let orderBy: any = {};
         if (sortBy === 'productCount') {
             orderBy = { createdAt: order };
@@ -66,7 +133,6 @@ export class TagService {
             orderBy = { [sortBy]: order };
         }
 
-        // Get tags
         const tags = await this.prisma.tag.findMany({
             where,
             include: {
@@ -88,7 +154,6 @@ export class TagService {
             orderBy,
         });
 
-        // Sort by product count if needed
         let sortedTags = tags;
         if (sortBy === 'productCount') {
             sortedTags = tags.sort((a, b) => {
@@ -97,7 +162,6 @@ export class TagService {
             });
         }
 
-        // Transform response
         const data = sortedTags.map((tag) => ({
             id: tag.id,
             name: tag.name,
@@ -193,11 +257,15 @@ export class TagService {
         };
     }
 
+    // ==========================================
+    // WRITE METHODS (WITH CACHE INVALIDATION)
+    // ==========================================
+
     /**
      * CREATE TAG (Admin)
+     * Invalidates: tags:list:*
      */
     async createTag(dto: CreateTagDto) {
-        // Check if slug already exists
         const existingTag = await this.prisma.tag.findUnique({
             where: { slug: dto.slug },
         });
@@ -206,7 +274,6 @@ export class TagService {
             throw new ConflictException('Tag with this slug already exists');
         }
 
-        // Check if name already exists
         const existingName = await this.prisma.tag.findFirst({
             where: {
                 name: {
@@ -220,7 +287,6 @@ export class TagService {
             throw new ConflictException('Tag with this name already exists');
         }
 
-        // Create tag
         const tag = await this.prisma.tag.create({
             data: {
                 name: dto.name,
@@ -229,6 +295,9 @@ export class TagService {
         });
 
         this.logger.info(`✅ Tag created: ${tag.name} (${tag.id})`);
+
+        // Invalidate tag list caches
+        await this.invalidateTagCaches();
 
         return {
             data: {
@@ -244,9 +313,9 @@ export class TagService {
 
     /**
      * UPDATE TAG (Admin)
+     * Invalidates: tags:list:*
      */
     async updateTag(id: string, dto: UpdateTagDto) {
-        // Check if tag exists
         const existingTag = await this.prisma.tag.findUnique({
             where: { id },
         });
@@ -255,7 +324,6 @@ export class TagService {
             throw new NotFoundException('Tag not found');
         }
 
-        // Check if slug is being changed and already exists
         if (dto.slug && dto.slug !== existingTag.slug) {
             const slugExists = await this.prisma.tag.findUnique({
                 where: { slug: dto.slug },
@@ -266,7 +334,6 @@ export class TagService {
             }
         }
 
-        // Check if name is being changed and already exists
         if (dto.name && dto.name !== existingTag.name) {
             const nameExists = await this.prisma.tag.findFirst({
                 where: {
@@ -283,7 +350,6 @@ export class TagService {
             }
         }
 
-        // Update tag
         const tag = await this.prisma.tag.update({
             where: { id },
             data: {
@@ -295,11 +361,15 @@ export class TagService {
 
         this.logger.info(`✅ Tag updated: ${tag.name} (${tag.id})`);
 
+        // Invalidate tag list caches
+        await this.invalidateTagCaches();
+
         return this.getTagById(tag.id);
     }
 
     /**
      * DELETE TAG (Admin) - Soft Delete
+     * Invalidates: tags:list:*
      */
     async deleteTag(id: string) {
         const tag = await this.prisma.tag.findUnique({
@@ -314,13 +384,15 @@ export class TagService {
             throw new BadRequestException('Tag already deleted');
         }
 
-        // Soft delete tag (ProductTag junction will remain)
         await this.prisma.tag.update({
             where: { id },
             data: { deletedAt: new Date() },
         });
 
         this.logger.info(`🗑️ Tag soft deleted: ${tag.name} (${id})`);
+
+        // Invalidate caches
+        await this.invalidateTagCaches();
 
         return {
             message: 'Tag deleted successfully',
@@ -330,6 +402,7 @@ export class TagService {
 
     /**
      * RESTORE TAG (Admin)
+     * Invalidates: tags:list:*
      */
     async restoreTag(id: string) {
         const tag = await this.prisma.tag.findUnique({
@@ -344,7 +417,6 @@ export class TagService {
             throw new BadRequestException('Tag is not deleted');
         }
 
-        // Restore tag
         await this.prisma.tag.update({
             where: { id },
             data: { deletedAt: null },
@@ -352,11 +424,15 @@ export class TagService {
 
         this.logger.info(`♻️ Tag restored: ${tag.name} (${id})`);
 
+        // Invalidate caches
+        await this.invalidateTagCaches();
+
         return this.getTagById(id);
     }
 
     /**
      * HARD DELETE TAG (Admin) - Permanent Delete
+     * Invalidates: tags:list:*
      */
     async hardDeleteTag(id: string) {
         const tag = await this.prisma.tag.findUnique({
@@ -367,12 +443,14 @@ export class TagService {
             throw new NotFoundException('Tag not found');
         }
 
-        // Hard delete from database (cascade will delete ProductTag records)
         await this.prisma.tag.delete({
             where: { id },
         });
 
         this.logger.info(`💀 Tag permanently deleted: ${tag.name} (${id})`);
+
+        // Invalidate caches
+        await this.invalidateTagCaches();
 
         return {
             message: 'Tag permanently deleted',
@@ -382,6 +460,7 @@ export class TagService {
 
     /**
      * TOGGLE TAG ACTIVE STATUS (Admin)
+     * Invalidates: tags:list:*
      */
     async toggleTagActive(id: string) {
         const tag = await this.prisma.tag.findUnique({
@@ -401,6 +480,9 @@ export class TagService {
 
         this.logger.info(`🔄 Tag active status toggled: ${tag.name} (${updated.isActive})`);
 
+        // Invalidate caches
+        await this.invalidateTagCaches();
+
         return {
             message: 'Tag status updated',
             data: {
@@ -410,11 +492,14 @@ export class TagService {
         };
     }
 
+    // ==========================================
+    // OTHER METHODS (NO CACHING NEEDED)
+    // ==========================================
+
     /**
      * GET PRODUCTS BY TAG (Public)
      */
     async getProductsByTag(slug: string, queryParams: any) {
-        // 1. Validasi keberadaan tag (kode ini tidak berubah)
         const tag = await this.prisma.tag.findUnique({
             where: { slug, deletedAt: null, isActive: true },
         });
@@ -423,18 +508,13 @@ export class TagService {
             throw new NotFoundException('Tag not found');
         }
 
-        // 2. Siapkan parameter untuk ProductService
-        // Kita tambahkan filter tagId ke dalam queryParams yang ada
         const productsQuery = {
             ...queryParams,
-            tagId: tag.id, // Ini adalah filter kunci
+            tagId: tag.id,
         };
 
-        // 3. Panggil ProductService untuk mengambil produk
-        // `false` menandakan ini adalah panggilan publik (hanya produk aktif)
         const productsResult = await this.productService.getAllProducts(productsQuery, false);
 
-        // 4. Gabungkan hasilnya
         return {
             data: {
                 tag: {
@@ -442,7 +522,7 @@ export class TagService {
                     name: tag.name,
                     slug: tag.slug,
                 },
-                products: productsResult, // Langsung masukkan hasil dari ProductService
+                products: productsResult,
             },
         };
     }
@@ -482,7 +562,6 @@ export class TagService {
             throw new NotFoundException('Tag not found');
         }
 
-        // Calculate statistics
         const products = tag.products.map((pt) => pt.product);
         const totalProducts = products.length;
         const activeProducts = products.filter((p) => p.isActive).length;
@@ -493,7 +572,6 @@ export class TagService {
         const avgRating =
             products.reduce((sum, p) => sum + (p.avgRating || 0), 0) / totalProducts || 0;
 
-        // Get top products
         const topProducts = products
             .sort((a, b) => b.totalSold - a.totalSold)
             .slice(0, 5)
@@ -550,10 +628,9 @@ export class TagService {
                     },
                 },
             },
-            take: limit * 2, // Fetch more to sort
+            take: limit * 2,
         });
 
-        // Sort by product count
         const sortedTags = tags
             .sort((a, b) => b._count.products - a._count.products)
             .slice(0, limit)
@@ -571,6 +648,7 @@ export class TagService {
 
     /**
      * BULK DELETE TAGS (Admin)
+     * Invalidates: tags:list:*
      */
     async bulkDeleteTags(ids: string[]) {
         const tags = await this.prisma.tag.findMany({
@@ -588,6 +666,9 @@ export class TagService {
 
         this.logger.info(`🗑️ Bulk deleted ${result.count} tags`);
 
+        // Invalidate caches
+        await this.invalidateTagCaches();
+
         return {
             message: `${result.count} tags deleted successfully`,
             data: { count: result.count },
@@ -596,6 +677,7 @@ export class TagService {
 
     /**
      * BULK RESTORE TAGS (Admin)
+     * Invalidates: tags:list:*
      */
     async bulkRestoreTags(ids: string[]) {
         const tags = await this.prisma.tag.findMany({
@@ -612,6 +694,9 @@ export class TagService {
         });
 
         this.logger.info(`♻️ Bulk restored ${result.count} tags`);
+
+        // Invalidate caches
+        await this.invalidateTagCaches();
 
         return {
             message: `${result.count} tags restored successfully`,

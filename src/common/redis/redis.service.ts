@@ -243,12 +243,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     /**
      * Get TTL for specific data type
      */
-    getTTL(dataType: 'products' | 'product_list' | 'categories' | 'notifications'): number {
+    getTTL(dataType: 'products' | 'product_list' | 'categories' | 'tags' | 'promotions'): number {
         const ttlMap = {
             products: this.configService.get<number>('CACHE_TTL_PRODUCTS', 300),
             product_list: this.configService.get<number>('CACHE_TTL_PRODUCT_LIST', 180),
             categories: this.configService.get<number>('CACHE_TTL_CATEGORIES', 600),
-            notifications: this.configService.get<number>('CACHE_TTL_NOTIFICATIONS', 0),
+            tags: this.configService.get<number>('CACHE_TTL_TAGS', 600),
+            promotions: this.configService.get<number>('CACHE_TTL_PROMOTIONS', 300),
         };
 
         return ttlMap[dataType];
