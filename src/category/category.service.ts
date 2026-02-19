@@ -4,6 +4,7 @@ import {
     ConflictException,
     BadRequestException,
     Inject,
+    OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { PaginationUtil } from '../utils/pagination.util';
@@ -14,40 +15,112 @@ import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Prisma } from '@prisma/client';
 import { ProductService } from '../product/product.service';
+import { RedisService } from '../common/redis/redis.service';
+import { createHash } from 'crypto';
 
 @Injectable()
-export class CategoryService {
+export class CategoryService implements OnModuleInit {
     constructor(
         private prisma: PrismaService,
-        @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
+        private redisService: RedisService,
         private productService: ProductService,
+        @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
+
+    // ==========================================
+    // CACHE WARMING ON STARTUP
+    // ==========================================
+
+    async onModuleInit() {
+        if (!this.redisService.isCacheEnabled()) return;
+
+        try {
+            this.logger.info('🔥 Warming category cache...');
+
+            const defaultDto: GetCategoriesDto = {
+                page: 1,
+                limit: 20,
+                sortBy: 'name',
+                order: 'asc',
+                includeDeleted: false,
+                isActive: undefined,
+            };
+            await this.getAllCategories(defaultDto, false);
+
+            this.logger.info('✅ Category cache warmed successfully');
+        } catch (error) {
+            this.logger.warn('⚠️  Category cache warming failed (non-critical)', { error });
+        }
+    }
+
+    // ==========================================
+    // CACHE HELPERS
+    // ==========================================
+
+    private hashParams(params: any): string {
+        return createHash('md5').update(JSON.stringify(params)).digest('hex');
+    }
+
+    private buildCategoryListKey(dto: GetCategoriesDto): string {
+        return `categories:list:${this.hashParams(dto)}`;
+    }
+
+    /**
+     * Invalidate all category-related caches
+     * Also invalidates product list caches (products include category data)
+     */
+    async invalidateCategoryCaches(): Promise<void> {
+        await Promise.all([
+            this.redisService.delByPattern('categories:list:*'),
+            this.redisService.delByPattern('products:list:*'),
+        ]);
+    }
+
+    // ==========================================
+    // READ METHODS (WITH CACHING)
+    // ==========================================
 
     /**
      * GET ALL CATEGORIES (Public & Admin)
+     * Caching: Public calls only (isAdmin = false)
      */
     async getAllCategories(dto: GetCategoriesDto, isAdmin: boolean = false) {
+        // Only cache public requests
+        if (!isAdmin) {
+            const cacheKey = this.buildCategoryListKey(dto);
+            const cached = await this.redisService.get<any>(cacheKey);
+            if (cached) return cached;
+
+            const result = await this._fetchAllCategories(dto, false);
+            const ttl = this.redisService.getTTL('categories');
+            await this.redisService.set(cacheKey, result, ttl);
+            return result;
+        }
+
+        // Admin: always fresh data
+        return this._fetchAllCategories(dto, true);
+    }
+
+    /**
+     * Internal: actual DB query for getAllCategories
+     */
+    private async _fetchAllCategories(dto: GetCategoriesDto, isAdmin: boolean) {
         const { page, limit, search, isActive, sortBy, order, includeDeleted } = dto;
 
-        // Validate pagination
         const { page: validPage, limit: validLimit } = PaginationUtil.validateParams(page, limit);
 
-        // Build where clause
         const where: Prisma.CategoryWhereInput = {};
 
-        // Soft delete filter
         if (!isAdmin || !includeDeleted) {
             where.deletedAt = null;
         }
 
-        // Active filter
         if (!isAdmin) {
-            where.isActive = true; // Public only
+            where.isActive = true;
         } else if (isActive !== undefined) {
-            where.isActive = isActive; // Admin optional filter
+            where.isActive = isActive;
         }
 
-        // Search filter
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
@@ -55,19 +128,15 @@ export class CategoryService {
             ];
         }
 
-        // Get total count
         const total = await this.prisma.category.count({ where });
 
-        // Prepare orderBy based on sortBy
         let orderBy: any = {};
         if (sortBy === 'productCount') {
-            // We'll sort by product count after fetching
             orderBy = { createdAt: order };
         } else {
             orderBy = { [sortBy]: order };
         }
 
-        // Get categories
         const categories = await this.prisma.category.findMany({
             where,
             include: {
@@ -87,7 +156,6 @@ export class CategoryService {
             orderBy,
         });
 
-        // Sort by product count if needed
         let sortedCategories = categories;
         if (sortBy === 'productCount') {
             sortedCategories = categories.sort((a, b) => {
@@ -96,7 +164,6 @@ export class CategoryService {
             });
         }
 
-        // Transform response
         const data = sortedCategories.map((category) => ({
             id: category.id,
             name: category.name,
@@ -116,6 +183,7 @@ export class CategoryService {
 
     /**
      * GET CATEGORY BY SLUG (Public)
+     * No individual caching needed (low frequency endpoint)
      */
     async getCategoryBySlug(slug: string) {
         const category = await this.prisma.category.findUnique({
@@ -153,6 +221,7 @@ export class CategoryService {
 
     /**
      * GET CATEGORY BY ID (Admin)
+     * No caching - admin always needs fresh data
      */
     async getCategoryById(id: string) {
         const category = await this.prisma.category.findUnique({
@@ -188,11 +257,15 @@ export class CategoryService {
         };
     }
 
+    // ==========================================
+    // WRITE METHODS (WITH CACHE INVALIDATION)
+    // ==========================================
+
     /**
      * CREATE CATEGORY (Admin)
+     * Invalidates: categories:list:*
      */
     async createCategory(dto: CreateCategoryDto) {
-        // Check if slug already exists
         const existingCategory = await this.prisma.category.findUnique({
             where: { slug: dto.slug },
         });
@@ -201,7 +274,6 @@ export class CategoryService {
             throw new ConflictException('Category with this slug already exists');
         }
 
-        // Check if name already exists
         const existingName = await this.prisma.category.findFirst({
             where: {
                 name: {
@@ -215,7 +287,6 @@ export class CategoryService {
             throw new ConflictException('Category with this name already exists');
         }
 
-        // Create category
         const category = await this.prisma.category.create({
             data: {
                 name: dto.name,
@@ -224,6 +295,9 @@ export class CategoryService {
         });
 
         this.logger.info(`✅ Category created: ${category.name} (${category.id})`);
+
+        // Invalidate category list caches
+        await this.invalidateCategoryCaches();
 
         return {
             data: {
@@ -239,9 +313,9 @@ export class CategoryService {
 
     /**
      * UPDATE CATEGORY (Admin)
+     * Invalidates: categories:list:*, products:list:*
      */
     async updateCategory(id: string, dto: UpdateCategoryDto) {
-        // Check if category exists
         const existingCategory = await this.prisma.category.findUnique({
             where: { id },
         });
@@ -250,7 +324,6 @@ export class CategoryService {
             throw new NotFoundException('Category not found');
         }
 
-        // Check if slug is being changed and already exists
         if (dto.slug && dto.slug !== existingCategory.slug) {
             const slugExists = await this.prisma.category.findUnique({
                 where: { slug: dto.slug },
@@ -261,7 +334,6 @@ export class CategoryService {
             }
         }
 
-        // Check if name is being changed and already exists
         if (dto.name && dto.name !== existingCategory.name) {
             const nameExists = await this.prisma.category.findFirst({
                 where: {
@@ -278,7 +350,6 @@ export class CategoryService {
             }
         }
 
-        // Update category
         const category = await this.prisma.category.update({
             where: { id },
             data: {
@@ -290,11 +361,15 @@ export class CategoryService {
 
         this.logger.info(`✅ Category updated: ${category.name} (${category.id})`);
 
+        // Invalidate caches (category name/slug may have changed in product data)
+        await this.invalidateCategoryCaches();
+
         return this.getCategoryById(category.id);
     }
 
     /**
      * DELETE CATEGORY (Admin) - Soft Delete
+     * Invalidates: categories:list:*
      */
     async deleteCategory(id: string) {
         const category = await this.prisma.category.findUnique({
@@ -318,20 +393,21 @@ export class CategoryService {
             throw new BadRequestException('Category already deleted');
         }
 
-        // Check if category has products
         if (category._count.products > 0) {
             throw new BadRequestException(
                 `Cannot delete category with ${category._count.products} active products. Please reassign or delete products first.`,
             );
         }
 
-        // Soft delete category
         await this.prisma.category.update({
             where: { id },
             data: { deletedAt: new Date() },
         });
 
         this.logger.info(`🗑️ Category soft deleted: ${category.name} (${id})`);
+
+        // Invalidate caches
+        await this.invalidateCategoryCaches();
 
         return {
             message: 'Category deleted successfully',
@@ -341,6 +417,7 @@ export class CategoryService {
 
     /**
      * RESTORE CATEGORY (Admin)
+     * Invalidates: categories:list:*
      */
     async restoreCategory(id: string) {
         const category = await this.prisma.category.findUnique({
@@ -355,7 +432,6 @@ export class CategoryService {
             throw new BadRequestException('Category is not deleted');
         }
 
-        // Restore category
         await this.prisma.category.update({
             where: { id },
             data: { deletedAt: null },
@@ -363,11 +439,15 @@ export class CategoryService {
 
         this.logger.info(`♻️ Category restored: ${category.name} (${id})`);
 
+        // Invalidate caches
+        await this.invalidateCategoryCaches();
+
         return this.getCategoryById(id);
     }
 
     /**
      * HARD DELETE CATEGORY (Admin) - Permanent Delete
+     * Invalidates: categories:list:*
      */
     async hardDeleteCategory(id: string) {
         const category = await this.prisma.category.findUnique({
@@ -383,19 +463,20 @@ export class CategoryService {
             throw new NotFoundException('Category not found');
         }
 
-        // Check if category has any products (even deleted ones)
         if (category._count.products > 0) {
             throw new BadRequestException(
                 `Cannot permanently delete category with ${category._count.products} products. Please remove all products first.`,
             );
         }
 
-        // Hard delete from database
         await this.prisma.category.delete({
             where: { id },
         });
 
         this.logger.info(`💀 Category permanently deleted: ${category.name} (${id})`);
+
+        // Invalidate caches
+        await this.invalidateCategoryCaches();
 
         return {
             message: 'Category permanently deleted',
@@ -405,6 +486,7 @@ export class CategoryService {
 
     /**
      * TOGGLE CATEGORY ACTIVE STATUS (Admin)
+     * Invalidates: categories:list:*, products:list:*
      */
     async toggleCategoryActive(id: string) {
         const category = await this.prisma.category.findUnique({
@@ -426,6 +508,9 @@ export class CategoryService {
             `🔄 Category active status toggled: ${category.name} (${updated.isActive})`,
         );
 
+        // Invalidate caches (visibility changed, affects product queries too)
+        await this.invalidateCategoryCaches();
+
         return {
             message: 'Category status updated',
             data: {
@@ -434,6 +519,10 @@ export class CategoryService {
             },
         };
     }
+
+    // ==========================================
+    // OTHER METHODS (NO CACHING NEEDED)
+    // ==========================================
 
     /**
      * GET PRODUCTS BY CATEGORY (Public)
@@ -494,7 +583,6 @@ export class CategoryService {
             throw new NotFoundException('Category not found');
         }
 
-        // Calculate statistics
         const totalProducts = category.products.length;
         const activeProducts = category.products.filter((p) => p.isActive).length;
         const inactiveProducts = totalProducts - activeProducts;
@@ -504,7 +592,6 @@ export class CategoryService {
         const avgRating =
             category.products.reduce((sum, p) => sum + (p.avgRating || 0), 0) / totalProducts || 0;
 
-        // Get top products
         const topProducts = category.products
             .sort((a, b) => b.totalSold - a.totalSold)
             .slice(0, 5)
@@ -540,9 +627,9 @@ export class CategoryService {
 
     /**
      * BULK DELETE CATEGORIES (Admin)
+     * Invalidates: categories:list:*, products:list:*
      */
     async bulkDeleteCategories(ids: string[]) {
-        // Check all categories exist
         const categories = await this.prisma.category.findMany({
             where: { id: { in: ids } },
             include: {
@@ -558,7 +645,6 @@ export class CategoryService {
             throw new NotFoundException('No categories found');
         }
 
-        // Check if any category has products
         const categoriesWithProducts = categories.filter((c) => c._count.products > 0);
         if (categoriesWithProducts.length > 0) {
             throw new BadRequestException(
@@ -573,6 +659,9 @@ export class CategoryService {
 
         this.logger.info(`🗑️ Bulk deleted ${result.count} categories`);
 
+        // Invalidate caches
+        await this.invalidateCategoryCaches();
+
         return {
             message: `${result.count} categories deleted successfully`,
             data: { count: result.count },
@@ -581,6 +670,7 @@ export class CategoryService {
 
     /**
      * BULK RESTORE CATEGORIES (Admin)
+     * Invalidates: categories:list:*
      */
     async bulkRestoreCategories(ids: string[]) {
         const categories = await this.prisma.category.findMany({
@@ -597,6 +687,9 @@ export class CategoryService {
         });
 
         this.logger.info(`♻️ Bulk restored ${result.count} categories`);
+
+        // Invalidate caches
+        await this.invalidateCategoryCaches();
 
         return {
             message: `${result.count} categories restored successfully`,

@@ -19,12 +19,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-kenbike_dev}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kenbike_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-kenbike_dev}
+      POSTGRES_HOST_AUTH_METHOD: trust
     command:
       - "postgres"
       - "-c"
       - "shared_preload_libraries=pg_stat_statements"
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - kenbike_dev_pgdata:/var/lib/postgresql/data
       # Init script to enable pg_stat_statements

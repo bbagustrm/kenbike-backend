@@ -4,6 +4,7 @@ import {
     ConflictException,
     BadRequestException,
     Inject,
+    OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { PaginationUtil } from '../utils/pagination.util';
@@ -12,22 +13,116 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Prisma } from '@prisma/client';
-import { UpdateProductDto } from "./dto/update-product.dto";
+import { UpdateProductDto } from './dto/update-product.dto';
 import { LocalStorageService } from '../common/storage/local-storage.service';
+import { RedisService } from '../common/redis/redis.service';
+import { createHash } from 'crypto';
 
 @Injectable()
-export class ProductService {
+export class ProductService implements OnModuleInit {
     constructor(
         private prisma: PrismaService,
         private localStorageService: LocalStorageService,
+        private redisService: RedisService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
+    // ==========================================
+    // CACHE WARMING ON STARTUP
+    // ==========================================
+
+    async onModuleInit() {
+        if (!this.redisService.isCacheEnabled()) return;
+
+        try {
+            this.logger.info('🔥 Warming product cache...');
+
+            // Warm product list page 1 (default public query)
+            const defaultDto: GetProductsDto = {
+                page: 1,
+                limit: 20,
+                sortBy: 'createdAt',
+                order: 'desc',
+                includeDeleted: false,
+                isFeatured: undefined,
+                isPreOrder: undefined,
+                hasPromotion: undefined,
+                isActive: undefined,
+            };
+            await this.getAllProducts(defaultDto, false);
+
+            // Warm page 2 & 3
+            for (const page of [2, 3]) {
+                await this.getAllProducts({ ...defaultDto, page }, false);
+            }
+
+            this.logger.info('✅ Product cache warmed successfully');
+        } catch (error) {
+            this.logger.warn('⚠️  Product cache warming failed (non-critical)', { error });
+        }
+    }
+
+    // ==========================================
+    // CACHE HELPERS
+    // ==========================================
+
+    private hashParams(params: any): string {
+        return createHash('md5').update(JSON.stringify(params)).digest('hex');
+    }
+
+    private buildProductListKey(dto: GetProductsDto): string {
+        return `products:list:${this.hashParams(dto)}`;
+    }
+
+    private buildProductDetailKey(slug: string): string {
+        return `product:${slug}`;
+    }
+
+    /**
+     * Invalidate all product-related caches
+     * Call this after any product mutation
+     */
+    private async invalidateProductCaches(slug?: string): Promise<void> {
+        const promises: Promise<any>[] = [
+            this.redisService.delByPattern('products:list:*'),
+        ];
+
+        if (slug) {
+            promises.push(this.redisService.del(this.buildProductDetailKey(slug)));
+        }
+
+        await Promise.all(promises);
+    }
+
+    // ==========================================
+    // READ METHODS (WITH CACHING)
+    // ==========================================
+
     /**
      * GET ALL PRODUCTS (Public & Admin)
-     * Updated to support hasPromotion filter
+     * Caching: Public calls only (isAdmin = false)
      */
     async getAllProducts(dto: GetProductsDto, isAdmin: boolean = false) {
+        // Only cache public (non-admin) requests
+        if (!isAdmin) {
+            const cacheKey = this.buildProductListKey(dto);
+            const cached = await this.redisService.get<any>(cacheKey);
+            if (cached) return cached;
+
+            const result = await this._fetchAllProducts(dto, false);
+            const ttl = this.redisService.getTTL('product_list');
+            await this.redisService.set(cacheKey, result, ttl);
+            return result;
+        }
+
+        // Admin: no caching, always fresh data
+        return this._fetchAllProducts(dto, true);
+    }
+
+    /**
+     * Internal: actual DB query for getAllProducts
+     */
+    private async _fetchAllProducts(dto: GetProductsDto, isAdmin: boolean) {
         const {
             page,
             limit,
@@ -47,25 +142,20 @@ export class ProductService {
             isActive,
         } = dto;
 
-        // Validate pagination
         const { page: validPage, limit: validLimit } = PaginationUtil.validateParams(page, limit);
 
-        // Build where clause
         const where: Prisma.ProductWhereInput = {};
 
-        // Soft delete filter
         if (!isAdmin || !includeDeleted) {
             where.deletedAt = null;
         }
 
-        // Active filter
         if (!isAdmin) {
-            where.isActive = true; // Public only sees active products
+            where.isActive = true;
         } else if (isActive !== undefined) {
-            where.isActive = isActive; // Admin can optionally filter by isActive
+            where.isActive = isActive;
         }
 
-        // Search filter
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
@@ -74,14 +164,12 @@ export class ProductService {
             ];
         }
 
-        // Category filter
         if (categoryId) {
             where.categoryId = categoryId;
         } else if (categorySlug) {
             where.category = { slug: categorySlug };
         }
 
-        // Tag filter
         if (tagId || tagSlug) {
             where.tags = {
                 some: tagId
@@ -90,38 +178,30 @@ export class ProductService {
             };
         }
 
-        // Price range filter
         if (minPrice !== undefined || maxPrice !== undefined) {
             where.idPrice = {};
             if (minPrice !== undefined) where.idPrice.gte = minPrice;
             if (maxPrice !== undefined) where.idPrice.lte = maxPrice;
         }
 
-        // Featured filter
         if (isFeatured !== undefined) {
             where.isFeatured = isFeatured;
         }
 
-        // Pre-order filter
         if (isPreOrder !== undefined) {
             where.isPreOrder = isPreOrder;
         }
 
-        // Promotion filter (NEW)
         if (hasPromotion !== undefined) {
             if (hasPromotion) {
-                // Only products with promotion
                 where.promotionId = { not: null };
             } else {
-                // Only products without promotion
                 where.promotionId = null;
             }
         }
 
-        // Get total count
         const total = await this.prisma.product.count({ where });
 
-        // Get products
         const products = await this.prisma.product.findMany({
             where,
             include: {
@@ -178,7 +258,6 @@ export class ProductService {
             },
         });
 
-        // Transform response
         const data = products.map((product) => ({
             id: product.id,
             name: product.name,
@@ -187,10 +266,8 @@ export class ProductService {
             enDescription: product.enDescription,
             idPrice: product.idPrice,
             enPrice: product.enPrice,
-
             imageUrl: product.images[0]?.imageUrl || null,
-            images: product.images, // include all images
-
+            images: product.images,
             totalSold: product.totalSold,
             totalView: product.totalView,
             avgRating: product.avgRating,
@@ -214,8 +291,25 @@ export class ProductService {
 
     /**
      * GET PRODUCT BY SLUG (Public)
+     * Caching: product:{slug}, TTL 300s
+     * Note: View count increment still runs even on cache hit
      */
     async getProductBySlug(slug: string) {
+        const cacheKey = this.buildProductDetailKey(slug);
+        const cached = await this.redisService.get<any>(cacheKey);
+
+        if (cached) {
+            // Increment view count in background even on cache hit
+            this.prisma.product
+                .findUnique({ where: { slug, deletedAt: null, isActive: true }, select: { id: true } })
+                .then((p) => {
+                    if (p) this.incrementViewCount(p.id).catch(() => {});
+                })
+                .catch(() => {});
+            return cached;
+        }
+
+        // Cache MISS: fetch from DB
         const product = await this.prisma.product.findUnique({
             where: { slug, deletedAt: null, isActive: true },
             include: {
@@ -255,12 +349,12 @@ export class ProductService {
             throw new NotFoundException('Product not found');
         }
 
-        // Increment view count
+        // Increment view count in background
         this.incrementViewCount(product.id).catch((error) => {
             this.logger.error('Failed to increment view count', error);
         });
 
-        return {
+        const result = {
             data: {
                 ...product,
                 tags: product.tags.map((pt) => pt.tag),
@@ -276,10 +370,16 @@ export class ProductService {
                 })),
             },
         };
+
+        const ttl = this.redisService.getTTL('products');
+        await this.redisService.set(cacheKey, result, ttl);
+
+        return result;
     }
 
     /**
      * GET PRODUCT BY ID (Admin)
+     * No caching - admin always needs fresh data
      */
     async getProductById(id: string) {
         const product = await this.prisma.product.findUnique({
@@ -335,11 +435,15 @@ export class ProductService {
         };
     }
 
+    // ==========================================
+    // WRITE METHODS (WITH CACHE INVALIDATION)
+    // ==========================================
+
     /**
      * CREATE PRODUCT (Admin)
+     * Invalidates: products:list:*
      */
     async createProduct(dto: CreateProductDto, mainImageFile?: Express.Multer.File) {
-        // Check if slug already exists
         const existingProduct = await this.prisma.product.findUnique({
             where: { slug: dto.slug },
         });
@@ -348,7 +452,6 @@ export class ProductService {
             throw new ConflictException('Product with this slug already exists');
         }
 
-        // Check if category exists
         if (dto.categoryId) {
             const category = await this.prisma.category.findUnique({
                 where: { id: dto.categoryId, deletedAt: null },
@@ -359,7 +462,6 @@ export class ProductService {
             }
         }
 
-        // Check if promotion exists
         if (dto.promotionId) {
             const promotion = await this.prisma.promotion.findUnique({
                 where: { id: dto.promotionId, deletedAt: null },
@@ -370,7 +472,6 @@ export class ProductService {
             }
         }
 
-        // Check if tags exist
         if (dto.tagIds && dto.tagIds.length > 0) {
             const tags = await this.prisma.tag.findMany({
                 where: { id: { in: dto.tagIds }, deletedAt: null },
@@ -381,7 +482,6 @@ export class ProductService {
             }
         }
 
-        // Check if variant SKUs are unique
         if (dto.variants && dto.variants.length > 0) {
             const skus = dto.variants.map((v) => v.sku);
             const existingVariants = await this.prisma.productVariant.findMany({
@@ -396,7 +496,6 @@ export class ProductService {
             }
         }
 
-        // Upload main image if provided
         let imageUrls = dto.imageUrls;
         if (mainImageFile) {
             const uploadResult = await this.localStorageService.uploadImage(
@@ -408,9 +507,7 @@ export class ProductService {
             }
         }
 
-        // Create product with images in transaction
         const product = await this.prisma.$transaction(async (tx) => {
-            // Create product
             const newProduct = await tx.product.create({
                 data: {
                     name: dto.name,
@@ -432,18 +529,16 @@ export class ProductService {
                 },
             });
 
-            // ✅ TAMBAHKAN: Create product images
             if (imageUrls && imageUrls.length > 0) {
                 await tx.productImage.createMany({
                     data: imageUrls.map((url, index) => ({
                         productId: newProduct.id,
                         imageUrl: url,
-                        order: index, // 0 = primary image
+                        order: index,
                     })),
                 });
             }
 
-            // Create variants (existing code)
             if (dto.variants && dto.variants.length > 0) {
                 for (const variant of dto.variants) {
                     const newVariant = await tx.productVariant.create({
@@ -467,7 +562,6 @@ export class ProductService {
                 }
             }
 
-            // Create tags (existing code)
             if (dto.tagIds && dto.tagIds.length > 0) {
                 await tx.productTag.createMany({
                     data: dto.tagIds.map((tagId) => ({
@@ -492,7 +586,9 @@ export class ProductService {
 
         this.logger.info(`✅ Product created: ${product.name} (${product.id})`);
 
-        // Fetch complete product data
+        // Invalidate product list caches (new product added)
+        await this.invalidateProductCaches();
+
         return this.getProductById(product.id);
     }
 
@@ -561,7 +657,7 @@ export class ProductService {
                 variants: {
                     where: {
                         deletedAt: null,
-                        isActive: true
+                        isActive: true,
                     },
                     select: {
                         id: true,
@@ -648,7 +744,7 @@ export class ProductService {
                 variants: {
                     where: {
                         deletedAt: null,
-                        isActive: true
+                        isActive: true,
                     },
                     select: {
                         id: true,
@@ -735,7 +831,7 @@ export class ProductService {
                 variants: {
                     where: {
                         deletedAt: null,
-                        isActive: true
+                        isActive: true,
                     },
                     select: {
                         id: true,
@@ -776,13 +872,15 @@ export class ProductService {
         return { data: finalData };
     }
 
-
+    /**
+     * UPDATE PRODUCT (Admin)
+     * Invalidates: product:{slug}, products:list:*
+     */
     async updateProduct(
         id: string,
         dto: UpdateProductDto,
         mainImageFile?: Express.Multer.File,
     ) {
-        // Check if product exists
         const existingProduct = await this.prisma.product.findUnique({
             where: { id },
             include: {
@@ -812,7 +910,6 @@ export class ProductService {
             }
         }
 
-        // Check if slug is being changed and already exists
         if (dto.slug && dto.slug !== existingProduct.slug) {
             const slugExists = await this.prisma.product.findUnique({
                 where: { slug: dto.slug },
@@ -823,11 +920,8 @@ export class ProductService {
             }
         }
 
-        // Check if category exists
         if (dto.categoryId !== undefined) {
-            if (dto.categoryId === null) {
-                // Allow removing category
-            } else {
+            if (dto.categoryId !== null) {
                 const category = await this.prisma.category.findUnique({
                     where: { id: dto.categoryId, deletedAt: null },
                 });
@@ -838,11 +932,8 @@ export class ProductService {
             }
         }
 
-        // Check if promotion exists
         if (dto.promotionId !== undefined) {
-            if (dto.promotionId === null) {
-                // Allow removing promotion
-            } else {
+            if (dto.promotionId !== null) {
                 const promotion = await this.prisma.promotion.findUnique({
                     where: { id: dto.promotionId, deletedAt: null },
                 });
@@ -853,7 +944,6 @@ export class ProductService {
             }
         }
 
-        // Check if tags exist
         if (dto.tagIds && dto.tagIds.length > 0) {
             const tags = await this.prisma.tag.findMany({
                 where: { id: { in: dto.tagIds }, deletedAt: null },
@@ -864,7 +954,6 @@ export class ProductService {
             }
         }
 
-        // Check variant SKUs uniqueness against other products
         if (dto.variants && dto.variants.length > 0) {
             const skusToCheck = dto.variants
                 .filter((v) => v.sku && v._action !== 'delete')
@@ -874,7 +963,7 @@ export class ProductService {
                 const existingVariants = await this.prisma.productVariant.findMany({
                     where: {
                         sku: { in: skusToCheck },
-                        productId: { not: id }, // Exclude current product's variants
+                        productId: { not: id },
                     },
                 });
 
@@ -887,14 +976,12 @@ export class ProductService {
             }
         }
 
-
         let imageUrls = dto.imageUrls;
         if (mainImageFile) {
             const uploadResult = await this.localStorageService.uploadImage(
                 mainImageFile,
                 'products',
             );
-            // Prepend new image ke array
             if (imageUrls) {
                 imageUrls = [uploadResult.url, ...imageUrls];
             } else {
@@ -902,9 +989,7 @@ export class ProductService {
             }
         }
 
-        // Update product in transaction
         const product = await this.prisma.$transaction(async (tx) => {
-            // Update product
             const updatedProduct = await tx.product.update({
                 where: { id },
                 data: {
@@ -914,7 +999,6 @@ export class ProductService {
                     ...(dto.enDescription !== undefined && { enDescription: dto.enDescription }),
                     ...(dto.idPrice !== undefined && { idPrice: dto.idPrice }),
                     ...(dto.enPrice !== undefined && { enPrice: dto.enPrice }),
-                    // imageUrl DIHAPUS
                     ...(dto.weight !== undefined && { weight: dto.weight }),
                     ...(dto.height !== undefined && { height: dto.height }),
                     ...(dto.length !== undefined && { length: dto.length }),
@@ -929,9 +1013,7 @@ export class ProductService {
                 },
             });
 
-            // ✅ TAMBAHKAN: Handle product images update
             if (imageUrls !== undefined) {
-                // Delete old images from storage
                 const oldImages = existingProduct.images;
                 for (const oldImage of oldImages) {
                     await this.localStorageService
@@ -941,12 +1023,10 @@ export class ProductService {
                         });
                 }
 
-                // Delete old images from database
                 await tx.productImage.deleteMany({
                     where: { productId: id },
                 });
 
-                // Create new images
                 if (imageUrls.length > 0) {
                     await tx.productImage.createMany({
                         data: imageUrls.map((url, index) => ({
@@ -958,7 +1038,6 @@ export class ProductService {
                 }
             }
 
-            // Handle variants (existing code with modifications)
             if (dto.variants && dto.variants.length > 0) {
                 for (const variant of dto.variants) {
                     if (variant.id) {
@@ -991,7 +1070,6 @@ export class ProductService {
                             }
                         }
                     } else {
-                        // Create new variant
                         if (variant.variantName && variant.sku && variant.stock !== undefined) {
                             const newVariant = await tx.productVariant.create({
                                 data: {
@@ -1016,7 +1094,6 @@ export class ProductService {
                 }
             }
 
-            // Handle tags (existing code)
             if (dto.tagIds !== undefined) {
                 await tx.productTag.deleteMany({
                     where: { productId: id },
@@ -1033,23 +1110,18 @@ export class ProductService {
             }
 
             if (dto.galleryImages !== undefined) {
-                // Get existing gallery IDs
                 const existingGalleryIds = existingProduct.gallery.map(g => g.id);
-
-                // Get IDs that should be kept (from dto)
                 const keepGalleryIds = dto.galleryImages
                     .filter(g => g.id && g._action !== 'delete')
                     .map(g => g.id!);
 
-                // Delete gallery images that are not in the new list
                 const galleryIdsToDelete = existingGalleryIds.filter(
-                    gId => !keepGalleryIds.includes(gId)
+                    gId => !keepGalleryIds.includes(gId),
                 );
 
                 if (galleryIdsToDelete.length > 0) {
-                    // Delete from storage
                     const galleriesToDelete = existingProduct.gallery.filter(
-                        g => galleryIdsToDelete.includes(g.id)
+                        g => galleryIdsToDelete.includes(g.id),
                     );
 
                     for (const gallery of galleriesToDelete) {
@@ -1060,18 +1132,15 @@ export class ProductService {
                             });
                     }
 
-                    // Delete from database
                     await tx.galleryImage.deleteMany({
                         where: { id: { in: galleryIdsToDelete } },
                     });
                 }
 
-                // Process each gallery image
                 for (const gallery of dto.galleryImages) {
                     if (gallery._action === 'delete' && gallery.id) {
-                        // Delete specific image
                         const galleryToDelete = existingProduct.gallery.find(
-                            g => g.id === gallery.id
+                            g => g.id === gallery.id,
                         );
 
                         if (galleryToDelete) {
@@ -1086,7 +1155,6 @@ export class ProductService {
                             where: { id: gallery.id },
                         });
                     } else if (gallery._action === 'update' && gallery.id) {
-                        // Update existing gallery image
                         await tx.galleryImage.update({
                             where: { id: gallery.id },
                             data: {
@@ -1095,7 +1163,6 @@ export class ProductService {
                             },
                         });
                     } else if (gallery._action === 'create' || !gallery.id) {
-                        // Create new gallery image
                         await tx.galleryImage.create({
                             data: {
                                 productId: id,
@@ -1111,11 +1178,19 @@ export class ProductService {
         });
 
         this.logger.info(`✅ Product updated: ${product.name} (${product.id})`);
+
+        // Invalidate both old slug (if changed) and new slug cache
+        await this.invalidateProductCaches(existingProduct.slug);
+        if (dto.slug && dto.slug !== existingProduct.slug) {
+            await this.redisService.del(this.buildProductDetailKey(dto.slug));
+        }
+
         return this.getProductById(product.id);
     }
 
     /**
      * DELETE PRODUCT (Admin) - Soft Delete
+     * Invalidates: product:{slug}, products:list:*
      */
     async deleteProduct(id: string) {
         const product = await this.prisma.product.findUnique({
@@ -1130,7 +1205,6 @@ export class ProductService {
             throw new BadRequestException('Product already deleted');
         }
 
-        // Soft delete product and its variants
         await this.prisma.$transaction([
             this.prisma.product.update({
                 where: { id },
@@ -1144,6 +1218,9 @@ export class ProductService {
 
         this.logger.info(`🗑️ Product soft deleted: ${product.name} (${id})`);
 
+        // Invalidate caches
+        await this.invalidateProductCaches(product.slug);
+
         return {
             message: 'Product deleted successfully',
             data: { id, deletedAt: new Date() },
@@ -1152,6 +1229,7 @@ export class ProductService {
 
     /**
      * RESTORE PRODUCT (Admin)
+     * Invalidates: products:list:*
      */
     async restoreProduct(id: string) {
         const product = await this.prisma.product.findUnique({
@@ -1166,7 +1244,6 @@ export class ProductService {
             throw new BadRequestException('Product is not deleted');
         }
 
-        // Restore product and its variants
         await this.prisma.$transaction([
             this.prisma.product.update({
                 where: { id },
@@ -1180,11 +1257,15 @@ export class ProductService {
 
         this.logger.info(`♻️ Product restored: ${product.name} (${id})`);
 
+        // Invalidate caches (product is now visible again)
+        await this.invalidateProductCaches(product.slug);
+
         return this.getProductById(id);
     }
 
     /**
-     * HARD DELETE PRODUCT (Admin) - Permanent Delete
+     * HARD DELETE PRODUCT (Admin)
+     * Invalidates: product:{slug}, products:list:*
      */
     async hardDeleteProduct(id: string) {
         const product = await this.prisma.product.findUnique({
@@ -1214,7 +1295,6 @@ export class ProductService {
             );
         }
 
-        // Delete variant images (existing code)
         for (const variant of product.variants) {
             for (const image of variant.images) {
                 imageDeletionPromises.push(
@@ -1235,12 +1315,14 @@ export class ProductService {
 
         await Promise.all(imageDeletionPromises);
 
-        // Hard delete from database (cascades will handle related records)
         await this.prisma.product.delete({
             where: { id },
         });
 
         this.logger.info(`💀 Product permanently deleted: ${product.name} (${id})`);
+
+        // Invalidate caches
+        await this.invalidateProductCaches(product.slug);
 
         return {
             message: 'Product permanently deleted',
@@ -1250,6 +1332,7 @@ export class ProductService {
 
     /**
      * TOGGLE PRODUCT ACTIVE STATUS (Admin)
+     * Invalidates: product:{slug}, products:list:*
      */
     async toggleProductActive(id: string) {
         const product = await this.prisma.product.findUnique({
@@ -1271,6 +1354,9 @@ export class ProductService {
             `🔄 Product active status toggled: ${product.name} (${updated.isActive})`,
         );
 
+        // Invalidate caches (visibility changed)
+        await this.invalidateProductCaches(product.slug);
+
         return {
             message: 'Product status updated',
             data: {
@@ -1282,6 +1368,7 @@ export class ProductService {
 
     /**
      * TOGGLE PRODUCT FEATURED STATUS (Admin)
+     * Invalidates: product:{slug}, products:list:*
      */
     async toggleProductFeatured(id: string) {
         const product = await this.prisma.product.findUnique({
@@ -1303,6 +1390,9 @@ export class ProductService {
             `⭐ Product featured status toggled: ${product.name} (${updated.isFeatured})`,
         );
 
+        // Invalidate caches
+        await this.invalidateProductCaches(product.slug);
+
         return {
             message: 'Product featured status updated',
             data: {
@@ -1314,6 +1404,7 @@ export class ProductService {
 
     /**
      * BULK DELETE PRODUCTS (Admin)
+     * Invalidates: products:list:*
      */
     async bulkDeleteProducts(ids: string[]) {
         const products = await this.prisma.product.findMany({
@@ -1337,6 +1428,13 @@ export class ProductService {
 
         this.logger.info(`🗑️ Bulk deleted ${result[0].count} products`);
 
+        // Invalidate all product caches (multiple slugs affected)
+        const invalidatePromises = [
+            this.redisService.delByPattern('products:list:*'),
+            ...products.map(p => this.redisService.del(this.buildProductDetailKey(p.slug))),
+        ];
+        await Promise.all(invalidatePromises);
+
         return {
             message: `${result[0].count} products deleted successfully`,
             data: { count: result[0].count },
@@ -1345,6 +1443,7 @@ export class ProductService {
 
     /**
      * BULK RESTORE PRODUCTS (Admin)
+     * Invalidates: products:list:*
      */
     async bulkRestoreProducts(ids: string[]) {
         const products = await this.prisma.product.findMany({
@@ -1367,6 +1466,9 @@ export class ProductService {
         ]);
 
         this.logger.info(`♻️ Bulk restored ${result[0].count} products`);
+
+        // Invalidate list caches
+        await this.redisService.delByPattern('products:list:*');
 
         return {
             message: `${result[0].count} products restored successfully`,
