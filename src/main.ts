@@ -33,8 +33,7 @@ async function bootstrap() {
   // ✅ Cookie parser
   app.use(cookieParser());
 
-  // ⚠️ PENTING: Trust Cloudflare proxy untuk mendapatkan real IP
-  // Cloudflare menggunakan CF-Connecting-IP header
+  // ⚠️ Trust Cloudflare proxy untuk mendapatkan real IP
   app.set('trust proxy', true);
 
   // ✅ Payload size limits
@@ -76,13 +75,11 @@ async function bootstrap() {
     etag: true,
     lastModified: true,
     setHeaders: (res, path) => {
-      // CORS headers untuk static files
-      res.setHeader('Access-Control-Allow-Origin', '*');  // Public assets
+      res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
-      // Preload untuk critical images
       if (path.includes('logo') || path.includes('hero')) {
         res.setHeader('Link', '<' + path + '>; rel=preload; as=image');
       }
@@ -92,7 +89,6 @@ async function bootstrap() {
   // ✅ CORS for API endpoints
   app.enableCors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, etc)
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
@@ -121,24 +117,42 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
 
-  await app.listen(3000, '0.0.0.0');  // ⚠️ PENTING: Bind ke 0.0.0.0 agar accessible dari luar container
+  await app.listen(3000, '0.0.0.0');
 
-  // ✅ Enhanced startup logs
+  // ✅ Accurate startup logs - reflect actual env values
+  const cacheEnabled   = process.env.ENABLE_CACHE === 'true';
+  const loadTestMode   = process.env.LOAD_TEST_MODE === 'true';
+  const rateLimit      = process.env.RATE_LIMIT_REQUESTS ?? '100';
+  const rateLimitTTL   = parseInt(process.env.RATE_LIMIT_TTL ?? '60000') / 1000;
+
   logger.log('info', '═══════════════════════════════════════════════');
   logger.log('info', '🚀 Server running on http://0.0.0.0:3000/api/v1');
   logger.log('info', `🖼️  Static files: http://0.0.0.0:3000/uploads/ -> ${uploadsPath}`);
   logger.log('info', '🗜️  GZIP compression: ENABLED');
   logger.log('info', '🍪 Cookie parser: ENABLED');
-  logger.log('info', '🛡️  DDoS Protection: ENABLED');
-  logger.log('info', '🔒 Rate Limiting: ENABLED');
-  logger.log('info', '   ├─ Short: 10 req/sec');
-  logger.log('info', '   ├─ Medium: 100 req/min');
-  logger.log('info', '   └─ Long: 500 req/15min');
+  logger.log('info', `🛡️  DDoS Protection: ${loadTestMode ? '⚠️  BYPASSED (LOAD_TEST_MODE=true)' : 'ENABLED'}`);
+  logger.log('info', `🔒 Rate Limiting: ${process.env.RATE_LIMIT_ENABLED === 'false' ? 'DISABLED' : `ENABLED (${rateLimit} req/${rateLimitTTL}s)`}`);
   logger.log('info', '🔐 Helmet Security Headers: ENABLED');
   logger.log('info', '🌐 Cloudflare Proxy: TRUSTED');
+  logger.log('info', `📦 Redis Cache: ${cacheEnabled ? '✅ ENABLED' : '🔴 DISABLED (Baseline mode)'}`);
+  if (cacheEnabled) {
+    logger.log('info', `   ├─ Product list TTL : ${process.env.CACHE_TTL_PRODUCT_LIST ?? 180}s`);
+    logger.log('info', `   ├─ Product detail TTL: ${process.env.CACHE_TTL_PRODUCTS ?? 300}s`);
+    logger.log('info', `   ├─ Categories TTL   : ${process.env.CACHE_TTL_CATEGORIES ?? 600}s`);
+    logger.log('info', `   ├─ Tags TTL         : ${process.env.CACHE_TTL_TAGS ?? 600}s`);
+    logger.log('info', `   └─ Promotions TTL   : ${process.env.CACHE_TTL_PROMOTIONS ?? 300}s`);
+  }
   logger.log('info', '📦 Payload Limits:');
   logger.log('info', '   ├─ Default: 1MB');
   logger.log('info', '   └─ Upload: 10MB');
+  if (loadTestMode) {
+    logger.log('info', '');
+    logger.log('info', '⚠️  ====================================');
+    logger.log('info', '⚠️  LOAD TEST MODE AKTIF!');
+    logger.log('info', '⚠️  DDoS protection dinonaktifkan.');
+    logger.log('info', '⚠️  Set LOAD_TEST_MODE=false setelah selesai!');
+    logger.log('info', '⚠️  ====================================');
+  }
   logger.log('info', '═══════════════════════════════════════════════');
 }
 

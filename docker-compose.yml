@@ -1,0 +1,211 @@
+# KenBike Production Docker Compose
+# Location: /var/www/kenbike/docker-compose.yml
+version: "3.8"
+
+services:
+  # ============================================
+  # PostgreSQL Database
+  # ============================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: kenbike-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - kenbike_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis Cache
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: kenbike-redis
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - kenbike_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Backend (NestJS API)
+  # ============================================
+  backend:
+    image: bbagustrm/kenbike-backend:latest
+    container_name: kenbike-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # App
+      NODE_ENV: production
+      PORT: 3000
+      FRONTEND_URL: ${FRONTEND_URL}
+
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: 0
+      REDIS_TTL: 3600
+
+      # ============================================
+      # Cache Control - Dikontrol dari .env
+      # Untuk BASELINE: ENABLE_CACHE=false
+      # Untuk REDIS:    ENABLE_CACHE=true
+      # ============================================
+      ENABLE_CACHE: ${ENABLE_CACHE:-true}
+      LOAD_TEST_MODE: ${LOAD_TEST_MODE:-false}
+      CACHE_TTL_PRODUCTS: ${CACHE_TTL_PRODUCTS:-300}
+      CACHE_TTL_PRODUCT_LIST: ${CACHE_TTL_PRODUCT_LIST:-180}
+      CACHE_TTL_CATEGORIES: ${CACHE_TTL_CATEGORIES:-600}
+      CACHE_TTL_TAGS: ${CACHE_TTL_TAGS:-600}
+      CACHE_TTL_PROMOTIONS: ${CACHE_TTL_PROMOTIONS:-300}
+
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY}
+      JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY}
+      JWT_RESET_PASSWORD_EXPIRY: ${JWT_RESET_PASSWORD_EXPIRY}
+
+      # File Upload
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE}
+      UPLOAD_PATH: /app/uploads
+      UPLOAD_DIR: /app/uploads
+      BASE_URL: ${BASE_URL}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+
+      # Security
+      CORS_ENABLED: true
+      HELMET_ENABLED: true
+
+      # ============================================
+      # Rate Limiting - Dikontrol dari .env
+      # Untuk LOAD TEST: naikkan limitnya
+      # ============================================
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_TTL: ${RATE_LIMIT_TTL:-60000}
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-100}
+
+      # Email
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USER: ${MAIL_USER}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME}
+
+      # Biteship
+      BITESHIP_API_KEY: ${BITESHIP_API_KEY}
+      BITESHIP_BASE_URL: ${BITESHIP_BASE_URL}
+      BITESHIP_COURIERS: ${BITESHIP_COURIERS}
+
+      # Warehouse
+      WAREHOUSE_NAME: ${WAREHOUSE_NAME}
+      WAREHOUSE_ADDRESS: ${WAREHOUSE_ADDRESS}
+      WAREHOUSE_CITY: ${WAREHOUSE_CITY}
+      WAREHOUSE_DISTRICT: ${WAREHOUSE_DISTRICT}
+      WAREHOUSE_PROVINCE: ${WAREHOUSE_PROVINCE}
+      WAREHOUSE_POSTAL_CODE: ${WAREHOUSE_POSTAL_CODE}
+      WAREHOUSE_COUNTRY: ${WAREHOUSE_COUNTRY}
+      WAREHOUSE_PHONE: ${WAREHOUSE_PHONE}
+      WAREHOUSE_LATITUDE: ${WAREHOUSE_LATITUDE}
+      WAREHOUSE_LONGITUDE: ${WAREHOUSE_LONGITUDE}
+
+      # Order
+      ORDER_PAYMENT_TIMEOUT_HOURS: ${ORDER_PAYMENT_TIMEOUT_HOURS}
+      ORDER_AUTO_COMPLETE_DAYS: ${ORDER_AUTO_COMPLETE_DAYS}
+
+      # Payment
+      USD_TO_IDR_RATE: ${USD_TO_IDR_RATE}
+      TAX_RATE: ${TAX_RATE}
+
+      # Midtrans
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY}
+      MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY}
+      MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION}
+      MIDTRANS_MERCHANT_ID: ${MIDTRANS_MERCHANT_ID}
+      MIDTRANS_WEBHOOK_URL: ${MIDTRANS_WEBHOOK_URL}
+
+      # PayPal
+      PAYPAL_MODE: ${PAYPAL_MODE}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET}
+      PAYPAL_WEBHOOK_URL: ${PAYPAL_WEBHOOK_URL}
+
+      # Company
+      COMPANY_NAME: ${COMPANY_NAME}
+      COMPANY_ADDRESS: ${COMPANY_ADDRESS}
+      COMPANY_EMAIL: ${COMPANY_EMAIL}
+      COMPANY_PHONE: ${COMPANY_PHONE}
+      WHATSAPP_SUPPORT_NUMBER: ${WHATSAPP_SUPPORT_NUMBER}
+
+      # Google OAuth
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL}
+
+      # Gemini AI
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+
+    volumes:
+      - ./uploads:/app/uploads
+    ports:
+      - "3000:3000"
+    networks:
+      - kenbike_network
+
+  # ============================================
+  # Frontend (Next.js)
+  # ============================================
+  frontend:
+    image: bbagustrm/kenbike-frontend:latest
+    container_name: kenbike-frontend
+    restart: always
+    depends_on:
+      - backend
+    environment:
+      NODE_ENV: production
+    ports:
+      - "3001:3000"
+    networks:
+      - kenbike_network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  kenbike_network:
+    driver: bridge

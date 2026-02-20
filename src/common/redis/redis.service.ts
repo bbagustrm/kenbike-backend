@@ -25,7 +25,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     };
 
     constructor(private configService: ConfigService) {
-        this.isEnabled = this.configService.get<boolean>('ENABLE_CACHE', true);
+        const enableCache = this.configService.get<string>('ENABLE_CACHE', 'true');
+        this.isEnabled = enableCache !== 'false';
     }
 
     /**

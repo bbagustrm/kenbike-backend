@@ -12,41 +12,56 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
     private requestMap = new Map<string, RequestData>();
     private blockedIPs = new Map<string, number>();
 
-    // ✅ Configurable based on environment
     private readonly IS_DEVELOPMENT = process.env.NODE_ENV !== 'production';
 
-    // ✅ Whitelist localhost IPs (IPv4 and IPv6)
+    // ============================================================
+    // LOAD TEST MODE
+    // Set LOAD_TEST_MODE=true di .env saat JMeter testing
+    // Set kembali false setelah selesai testing
+    // ============================================================
+    private readonly IS_LOAD_TEST = process.env.LOAD_TEST_MODE === 'true';
+
     private readonly WHITELISTED_IPS = [
-        '::1',           // IPv6 localhost
-        '127.0.0.1',     // IPv4 localhost
-        '::ffff:127.0.0.1', // IPv4-mapped IPv6
+        '::1',
+        '127.0.0.1',
+        '::ffff:127.0.0.1',
         'localhost',
     ];
 
-    // ✅ Adjusted limits - more lenient for development
-    private readonly WINDOW_MS = 10000; // 10 seconds
-    private readonly MAX_REQUESTS = this.IS_DEVELOPMENT ? 200 : 50; // Higher limit in dev
-    private readonly BLOCK_DURATION = this.IS_DEVELOPMENT ? 60000 : 300000; // 1 min dev, 5 min prod
-    private readonly SUSPICIOUS_THRESHOLD = this.IS_DEVELOPMENT ? 500 : 100; // Higher threshold in dev
+    private readonly WINDOW_MS = 10000;
+
+    // Saat load test: naikkan limit drastis agar tidak block JMeter
+    private readonly MAX_REQUESTS = this.IS_LOAD_TEST
+        ? 99999
+        : this.IS_DEVELOPMENT ? 200 : 50;
+
+    private readonly BLOCK_DURATION = this.IS_DEVELOPMENT ? 60000 : 300000;
+
+    private readonly SUSPICIOUS_THRESHOLD = this.IS_LOAD_TEST
+        ? 999999
+        : this.IS_DEVELOPMENT ? 500 : 100;
 
     use(req: Request, res: Response, next: NextFunction) {
+        // ============================================================
+        // LOAD TEST MODE: bypass semua proteksi
+        // ============================================================
+        if (this.IS_LOAD_TEST) {
+            return next();
+        }
+
         const ip = this.getClientIp(req);
         const now = Date.now();
         const path = req.path;
 
-        // ✅ Skip health check endpoints
         if (path.includes('/health')) {
             return next();
         }
 
-        // ✅ NEW: Skip DDoS check for whitelisted IPs (localhost) in development
         if (this.IS_DEVELOPMENT && this.isWhitelisted(ip)) {
             return next();
         }
 
-        // ✅ In production, still apply rate limiting to localhost but with higher limits
         if (this.isWhitelisted(ip)) {
-            // For whitelisted IPs in production, use more lenient limits
             return this.handleWhitelistedIP(req, res, next, ip, now);
         }
 
@@ -73,7 +88,6 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
         };
 
         const timeDiff = now - requestData.firstRequest;
-
         const suspiciousScore = this.calculateSuspiciousScore(req, requestData);
         requestData.suspiciousScore += suspiciousScore;
 
@@ -127,18 +141,12 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
         next();
     }
 
-    /**
-     * ✅ NEW: Check if IP is in whitelist
-     */
     private isWhitelisted(ip: string): boolean {
         return this.WHITELISTED_IPS.some(whitelisted =>
             ip === whitelisted || ip.includes(whitelisted)
         );
     }
 
-    /**
-     * ✅ NEW: Handle whitelisted IPs with more lenient limits (for production)
-     */
     private handleWhitelistedIP(
         req: Request,
         res: Response,
@@ -146,7 +154,6 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
         ip: string,
         now: number
     ): void {
-        // Use much higher limits for whitelisted IPs
         const WHITELIST_MAX_REQUESTS = 500;
         const WHITELIST_WINDOW_MS = 10000;
 
@@ -163,21 +170,12 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
 
             if (requestData.count > WHITELIST_MAX_REQUESTS) {
                 console.warn(`⚠️ Whitelisted IP ${ip} exceeded high limit: ${requestData.count}/${WHITELIST_MAX_REQUESTS}`);
-                // Don't block, just warn and reset
-                this.requestMap.set(ip, {
-                    count: 1,
-                    firstRequest: now,
-                    suspiciousScore: 0
-                });
+                this.requestMap.set(ip, { count: 1, firstRequest: now, suspiciousScore: 0 });
             } else {
                 this.requestMap.set(ip, requestData);
             }
         } else {
-            this.requestMap.set(ip, {
-                count: 1,
-                firstRequest: now,
-                suspiciousScore: 0
-            });
+            this.requestMap.set(ip, { count: 1, firstRequest: now, suspiciousScore: 0 });
         }
 
         next();
@@ -186,23 +184,32 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
     private calculateSuspiciousScore(req: Request, data: RequestData): number {
         let score = 0;
 
-        // ✅ Skip suspicious scoring for common browser patterns
         const userAgent = (req.headers['user-agent'] || '').toLowerCase();
 
-        // Common browsers should have low suspicion
-        const trustedBrowsers = ['mozilla', 'chrome', 'safari', 'firefox', 'edge'];
-        const isTrustedBrowser = trustedBrowsers.some(browser => userAgent.includes(browser));
+        // ============================================================
+        // Trusted user agents - browser & testing tools
+        // ============================================================
+        const trustedAgents = [
+            // Browsers
+            'mozilla', 'chrome', 'safari', 'firefox', 'edge',
+            // Testing tools - JMeter, Postman, etc
+            'apache-httpclient',   // JMeter default user agent
+            'java/',               // JMeter kadang pakai ini
+            'postmanruntime',      // Postman
+            'insomnia',            // Insomnia
+        ];
 
-        if (isTrustedBrowser) {
-            // Trusted browsers get much lower scores
+        const isTrustedAgent = trustedAgents.some(agent => userAgent.includes(agent));
+
+        if (isTrustedAgent) {
             const timeSinceFirst = Date.now() - data.firstRequest;
             if (data.count > 30 && timeSinceFirst < 500) {
-                score += 5; // Reduced from 20
+                score += 5;
             }
             return score;
         }
 
-        // Non-browser requests get normal scoring
+        // Non-trusted agents get normal scoring
         const timeSinceFirst = Date.now() - data.firstRequest;
         if (data.count > 5 && timeSinceFirst < 500) {
             score += 20;
@@ -237,7 +244,6 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
     }
 
     private blockIP(ip: string, timestamp: number): void {
-        // ✅ Never block whitelisted IPs
         if (this.isWhitelisted(ip)) {
             console.warn(`⚠️ Attempted to block whitelisted IP: ${ip} - SKIPPED`);
             return;
@@ -254,22 +260,13 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
     }
 
     private isBlocked(ip: string, now: number): boolean {
-        // ✅ Whitelisted IPs are never blocked
-        if (this.isWhitelisted(ip)) {
-            return false;
-        }
-
+        if (this.isWhitelisted(ip)) return false;
         if (!this.blockedIPs.has(ip)) return false;
 
         const blockTime = this.blockedIPs.get(ip);
+        if (blockTime === undefined) return false;
 
-        if (blockTime === undefined) {
-            return false;
-        }
-
-        if (now - blockTime < this.BLOCK_DURATION) {
-            return true;
-        }
+        if (now - blockTime < this.BLOCK_DURATION) return true;
 
         this.blockedIPs.delete(ip);
         return false;
@@ -283,9 +280,7 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
         }
 
         const realIp = req.headers['x-real-ip'];
-        if (realIp) {
-            return realIp as string;
-        }
+        if (realIp) return realIp as string;
 
         return req.socket.remoteAddress || 'unknown';
     }
@@ -306,9 +301,6 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
         console.info(`🧹 Cleanup: Active IPs: ${this.requestMap.size}, Blocked IPs: ${this.blockedIPs.size}`);
     }
 
-    /**
-     * ✅ NEW: Manual unblock IP (useful for admin endpoints)
-     */
     unblockIP(ip: string): boolean {
         if (this.blockedIPs.has(ip)) {
             this.blockedIPs.delete(ip);
@@ -318,9 +310,6 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
         return false;
     }
 
-    /**
-     * ✅ NEW: Clear all blocked IPs (emergency reset)
-     */
     clearAllBlocks(): void {
         const count = this.blockedIPs.size;
         this.blockedIPs.clear();
@@ -334,6 +323,7 @@ export class DDoSProtectionMiddleware implements NestMiddleware {
             blockedIPs: this.blockedIPs.size,
             blockedIPsList: Array.from(this.blockedIPs.keys()),
             environment: this.IS_DEVELOPMENT ? 'development' : 'production',
+            loadTestMode: this.IS_LOAD_TEST,
             limits: {
                 maxRequests: this.MAX_REQUESTS,
                 windowMs: this.WINDOW_MS,
