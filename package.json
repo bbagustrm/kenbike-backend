@@ -25,11 +25,11 @@
     "docker:dev:clean": "docker-compose -f docker-compose.dev.yml down -v",
     "docker:dev:logs": "docker-compose -f docker-compose.dev.yml logs -f app",
 
-    "docker:prod": "docker-compose -f docker-compose.prod.yml up -d",
-    "docker:prod:build": "docker-compose -f docker-compose.prod.yml up --build -d",
-    "docker:prod:down": "docker-compose -f docker-compose.prod.yml down",
-    "docker:prod:clean": "docker-compose -f docker-compose.prod.yml down -v",
-    "docker:prod:logs": "docker-compose -f docker-compose.prod.yml logs -f app",
+    "docker:prod": "docker-compose -f docker-compose.yml up -d",
+    "docker:prod:build": "docker-compose -f docker-compose.yml up --build -d",
+    "docker:prod:down": "docker-compose -f docker-compose.yml down",
+    "docker:prod:clean": "docker-compose -f docker-compose.yml down -v",
+    "docker:prod:logs": "docker-compose -f docker-compose.yml logs -f app",
 
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

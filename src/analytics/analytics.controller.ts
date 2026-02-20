@@ -254,15 +254,15 @@ export class AnalyticsController {
             const minCallsFilter = minCalls ? parseInt(minCalls) : 5;
 
             const stats = await this.prismaService.$queryRaw<any[]>`
-                SELECT 
-                    calls,
-                    ROUND(mean_exec_time::numeric, 2)   AS avg_time_ms,
-                    ROUND(max_exec_time::numeric, 2)    AS max_time_ms,
-                    ROUND(min_exec_time::numeric, 2)    AS min_time_ms,
-                    ROUND(total_exec_time::numeric, 2)  AS total_time_ms,
-                    ROUND(stddev_exec_time::numeric, 2) AS stddev_ms,
-                    rows,
-                    LEFT(query, 120)                     AS query_preview
+                SELECT
+                    calls::text                                  AS calls,
+                    ROUND(mean_exec_time::numeric, 2)::text      AS avg_time_ms,
+                    ROUND(max_exec_time::numeric, 2)::text       AS max_time_ms,
+                    ROUND(min_exec_time::numeric, 2)::text       AS min_time_ms,
+                    ROUND(total_exec_time::numeric, 2)::text     AS total_time_ms,
+                    ROUND(stddev_exec_time::numeric, 2)::text    AS stddev_ms,
+                    rows::text                                   AS rows,
+                    LEFT(query, 120)                             AS query_preview
                 FROM pg_stat_statements
                 WHERE 
                     query NOT LIKE '%pg_stat_statements%'
@@ -275,10 +275,10 @@ export class AnalyticsController {
             // Also get summary totals
             const summary = await this.prismaService.$queryRaw<any[]>`
                 SELECT
-                    COUNT(*)                                AS total_unique_queries,
-                    SUM(calls)                              AS total_calls,
-                    ROUND(SUM(total_exec_time)::numeric, 2) AS total_exec_time_ms,
-                    ROUND(AVG(mean_exec_time)::numeric, 2)  AS overall_avg_ms
+                    COUNT(*)::text                               AS total_unique_queries,
+                    SUM(calls)::text                             AS total_calls,
+                    ROUND(SUM(total_exec_time)::numeric, 2)::text AS total_exec_time_ms,
+                    ROUND(AVG(mean_exec_time)::numeric, 2)::text  AS overall_avg_ms
                 FROM pg_stat_statements
                 WHERE 
                     query NOT LIKE '%pg_stat_statements%'
@@ -322,7 +322,7 @@ export class AnalyticsController {
     @Roles('ADMIN', 'OWNER')
     async resetPgStatStatements() {
         try {
-            await this.prismaService.$queryRaw`SELECT pg_stat_statements_reset()`;
+            await this.prismaService.$executeRaw`SELECT pg_stat_statements_reset()`;
             return {
                 success: true,
                 message: 'pg_stat_statements counters reset successfully',
