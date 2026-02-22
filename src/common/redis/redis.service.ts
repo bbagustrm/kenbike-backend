@@ -50,8 +50,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
                 lazyConnect: true,
             });
 
-            await this.client.connect();
-
             this.client.on('connect', () => {
                 this.logger.log(`✅ Redis connected to ${redisHost}:${redisPort}`);
             });
@@ -67,6 +65,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
             this.client.on('reconnecting', () => {
                 this.logger.warn('🔄 Redis reconnecting...');
             });
+
+            await this.client.connect();
 
 
             this.logger.log('✅ Redis service initialized');
