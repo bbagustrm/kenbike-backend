@@ -39,13 +39,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
                 connectTimeout: 10000,
                 maxRetriesPerRequest: 3,
                 retryStrategy: (times: number) => {
-                    if (times > 10) {
-                        this.logger.error('❌ Redis max retry (10x) reached. Giving up — fallback to database.');
-                        return null; // null = stop retrying
+                    if (times <= 10) {
+                        const delay = Math.min(times * 500, 5000);
+                        this.logger.warn(`🔄 Redis retry attempt ${times}/10 in ${delay}ms...`);
+                        return delay;
                     }
-                    const delay = Math.min(times * 500, 5000);
-                    this.logger.warn(`🔄 Redis retry attempt ${times}/10 in ${delay}ms...`);
-                    return delay;
+                    this.logger.warn('⚠️  Redis degraded mode — retrying every 30s. Fallback to database active.');
+                    return 30000;
                 },
                 lazyConnect: true,
             });
@@ -68,10 +68,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
                 this.logger.warn('🔄 Redis reconnecting...');
             });
 
-            // ✅ Saat Redis menyerah reconnect → null client → fallback aktif
-            this.client.on('end', () => {
-                this.logger.warn('⚠️  Redis connection ended. Cache fallback to database.');
-            });
 
             this.logger.log('✅ Redis service initialized');
         } catch (error) {
@@ -88,7 +84,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         }
     }
 
-    // ✅ Ping method untuk health check
     async ping(): Promise<boolean> {
         if (!this.isEnabled || !this.client) return false;
         try {
