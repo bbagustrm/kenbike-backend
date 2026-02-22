@@ -2,43 +2,44 @@ import { Injectable } from '@nestjs/common';
 import { HealthIndicator, HealthIndicatorResult, HealthCheckError } from '@nestjs/terminus';
 import { RedisService } from './redis.service';
 
-/**
- * Redis Health Indicator
- *
- * Checks Redis connection status for health endpoint
- */
 @Injectable()
 export class RedisHealthIndicator extends HealthIndicator {
-    constructor(private redisService: RedisService) {
+    constructor(private readonly redisService: RedisService) {
         super();
     }
 
-    /**
-     * Check Redis health
-     */
     async isHealthy(key: string): Promise<HealthIndicatorResult> {
+        if (!this.redisService.isEnabled) {
+            return this.getStatus(key, true, {
+                status: 'disabled',
+                message: 'Redis caching is disabled (ENABLE_CACHE=false)',
+            });
+        }
+
+        if (!this.redisService.isCacheEnabled()) {
+            return this.getStatus(key, true, {
+                status: 'connecting',
+                message: 'Redis is enabled but not yet ready — fallback to database active',
+            });
+        }
+
         try {
-            // Try to set and get a test key
-            const testKey = 'health:check:redis';
-            const testValue = Date.now().toString();
+            const isAlive = await this.redisService.ping();
 
-            await this.redisService.set(testKey, testValue, 5); // 5 seconds TTL
-            const retrievedValue = await this.redisService.get(testKey);
-
-            if (retrievedValue === testValue) {
+            if (isAlive) {
                 return this.getStatus(key, true, {
                     status: 'up',
                     message: 'Redis is healthy',
                 });
             }
 
-            throw new Error('Redis read/write test failed');
+            throw new Error('Redis ping returned unexpected response');
         } catch (error) {
             throw new HealthCheckError(
-                'Redis health check failed',
+                'Redis read/write test failed',
                 this.getStatus(key, false, {
                     status: 'down',
-                    message: error.message,
+                    message: error instanceof Error ? error.message : 'Unknown error',
                 }),
             );
         }
