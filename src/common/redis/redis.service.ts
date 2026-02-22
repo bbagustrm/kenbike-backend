@@ -2,23 +2,13 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
-/**
- * Redis Service
- *
- * Direct implementation using ioredis for better compatibility
- * Provides centralized caching operations with:
- * - Error handling and fallback
- * - Cache statistics tracking
- * - Pattern-based cache invalidation
- * - TTL management per data type
- */
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(RedisService.name);
-    private readonly isEnabled: boolean;
+
+    public readonly isEnabled: boolean;
     private client: Redis | null = null;
 
-    // Cache hit/miss statistics
     private stats = {
         hits: 0,
         misses: 0,
@@ -29,12 +19,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         this.isEnabled = enableCache !== 'false';
     }
 
-    /**
-     * Initialize Redis connection
-     */
     async onModuleInit() {
         if (!this.isEnabled) {
-            this.logger.warn('⚠️  Redis caching is DISABLED');
+            this.logger.warn('⚠️  Redis caching is DISABLED - running in database-only mode (fallback active)');
             return;
         }
 
@@ -52,18 +39,25 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
                 connectTimeout: 10000,
                 maxRetriesPerRequest: 3,
                 retryStrategy: (times: number) => {
-                    const delay = Math.min(times * 50, 2000);
+                    if (times > 10) {
+                        this.logger.error('❌ Redis max retry (10x) reached. Giving up — fallback to database.');
+                        return null; // null = stop retrying
+                    }
+                    const delay = Math.min(times * 500, 5000);
+                    this.logger.warn(`🔄 Redis retry attempt ${times}/10 in ${delay}ms...`);
                     return delay;
                 },
                 lazyConnect: true,
             });
 
-            // Connect to Redis
             await this.client.connect();
 
-            // Event handlers
             this.client.on('connect', () => {
                 this.logger.log(`✅ Redis connected to ${redisHost}:${redisPort}`);
+            });
+
+            this.client.on('ready', () => {
+                this.logger.log('✅ Redis is ready');
             });
 
             this.client.on('error', (error) => {
@@ -74,16 +68,19 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
                 this.logger.warn('🔄 Redis reconnecting...');
             });
 
+            // ✅ Saat Redis menyerah reconnect → null client → fallback aktif
+            this.client.on('end', () => {
+                this.logger.warn('⚠️  Redis connection ended. Cache fallback to database.');
+            });
+
             this.logger.log('✅ Redis service initialized');
         } catch (error) {
             this.logger.error('❌ Failed to initialize Redis:', error);
+            this.logger.warn('⚠️  Cache fallback active — all requests will use database');
             this.client = null;
         }
     }
 
-    /**
-     * Close Redis connection
-     */
     async onModuleDestroy() {
         if (this.client) {
             await this.client.quit();
@@ -91,9 +88,21 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         }
     }
 
-    /**
-     * Get cache statistics
-     */
+    // ✅ Ping method untuk health check
+    async ping(): Promise<boolean> {
+        if (!this.isEnabled || !this.client) return false;
+        try {
+            const result = await this.client.ping();
+            return result === 'PONG';
+        } catch {
+            return false;
+        }
+    }
+
+    isCacheEnabled(): boolean {
+        return this.isEnabled && this.client?.status === 'ready';
+    }
+
     getStats() {
         const total = this.stats.hits + this.stats.misses;
         const hitRate = total > 0 ? (this.stats.hits / total) * 100 : 0;
@@ -104,30 +113,31 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
             total,
             hitRate: hitRate.toFixed(2) + '%',
             isConnected: this.client?.status === 'ready',
+            isEnabled: this.isEnabled,
         };
     }
 
-    /**
-     * Reset cache statistics
-     */
     resetStats() {
         this.stats.hits = 0;
         this.stats.misses = 0;
         this.logger.log('📊 Cache statistics reset');
     }
 
-    /**
-     * Get value from cache
-     *
-     * @param key Cache key
-     * @returns Cached value or null
-     */
     async get<T>(key: string): Promise<T | null> {
-        if (!this.isEnabled || !this.client) return null;
+        // ✅ Fallback logging saat cache disabled
+        if (!this.isEnabled) {
+            this.logger.debug('Cache skipped: Redis is disabled. Running without cache.');
+            return null;
+        }
+
+        if (!this.client || this.client.status !== 'ready') {
+            this.logger.warn('Cache skipped: Redis not ready.');
+            this.stats.misses++;
+            return null;
+        }
 
         try {
             const value = await this.client.get(key);
-
             if (value) {
                 this.stats.hits++;
                 this.logger.debug(`✅ Cache HIT: ${key}`);
@@ -144,39 +154,29 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         }
     }
 
-    /**
-     * Set value in cache
-     *
-     * @param key Cache key
-     * @param value Value to cache
-     * @param ttl Time to live in seconds (optional)
-     */
     async set<T>(key: string, value: T, ttl?: number): Promise<void> {
-        if (!this.isEnabled || !this.client) return;
+        if (!this.isEnabled) return;
+
+        if (!this.client || this.client.status !== 'ready') {
+            this.logger.warn('Cache skipped: Redis not ready.');
+            return;
+        }
 
         try {
             const serialized = JSON.stringify(value);
-
             if (ttl && ttl > 0) {
                 await this.client.setex(key, ttl, serialized);
             } else {
                 await this.client.set(key, serialized);
             }
-
             this.logger.debug(`✅ Cache SET: ${key} (TTL: ${ttl || 'none'}s)`);
         } catch (error) {
             this.logger.error(`❌ Error setting cache key "${key}":`, error);
         }
     }
 
-    /**
-     * Delete specific cache key
-     *
-     * @param key Cache key to delete
-     */
     async del(key: string): Promise<void> {
         if (!this.isEnabled || !this.client) return;
-
         try {
             await this.client.del(key);
             this.logger.debug(`🗑️  Cache DEL: ${key}`);
@@ -185,24 +185,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         }
     }
 
-    /**
-     * Delete multiple cache keys by pattern
-     *
-     * @param pattern Cache key pattern (e.g., "products:*")
-     */
     async delByPattern(pattern: string): Promise<number> {
         if (!this.isEnabled || !this.client) return 0;
-
         try {
             const keys = await this.client.keys(pattern);
-
-            if (keys.length === 0) {
-                this.logger.debug(`🔍 No keys found matching pattern: ${pattern}`);
-                return 0;
-            }
-
+            if (keys.length === 0) return 0;
             await this.client.del(...keys);
-
             this.logger.log(`🗑️  Deleted ${keys.length} keys matching pattern: ${pattern}`);
             return keys.length;
         } catch (error) {
@@ -211,12 +199,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         }
     }
 
-    /**
-     * Clear all cache
-     */
     async reset(): Promise<void> {
         if (!this.isEnabled || !this.client) return;
-
         try {
             await this.client.flushdb();
             this.logger.warn('🗑️  Cache RESET: All keys deleted');
@@ -225,25 +209,16 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         }
     }
 
-    /**
-     * Increment counter (for view counter, etc)
-     */
     async incr(key: string): Promise<number> {
         if (!this.isEnabled || !this.client) return 0;
-
         try {
-            const value = await this.client.incr(key);
-            this.logger.debug(`➕ Cache INCR: ${key} = ${value}`);
-            return value;
+            return await this.client.incr(key);
         } catch (error) {
             this.logger.error(`❌ Error incrementing cache key "${key}":`, error);
             return 0;
         }
     }
 
-    /**
-     * Get TTL for specific data type
-     */
     getTTL(dataType: 'products' | 'product_list' | 'categories' | 'tags' | 'promotions'): number {
         const ttlMap = {
             products: this.configService.get<number>('CACHE_TTL_PRODUCTS', 300),
@@ -252,30 +227,15 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
             tags: this.configService.get<number>('CACHE_TTL_TAGS', 600),
             promotions: this.configService.get<number>('CACHE_TTL_PROMOTIONS', 300),
         };
-
         return ttlMap[dataType];
     }
 
-    /**
-     * Build cache key with consistent format
-     */
     buildKey(prefix: string, ...parts: (string | number)[]): string {
         return `${prefix}:${parts.join(':')}`;
     }
 
-    /**
-     * Check if caching is enabled
-     */
-    isCacheEnabled(): boolean {
-        return this.isEnabled && this.client?.status === 'ready';
-    }
-
-    /**
-     * Get Redis info
-     */
     async getInfo(): Promise<string | null> {
         if (!this.client) return null;
-
         try {
             return await this.client.info();
         } catch (error) {
