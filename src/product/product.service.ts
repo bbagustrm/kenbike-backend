@@ -83,6 +83,7 @@ export class ProductService implements OnModuleInit {
      * Call this after any product mutation
      */
     private async invalidateProductCaches(slug?: string): Promise<void> {
+        this.logger.info(`🗑️  [CACHE INVALIDATE] Triggered — pattern: products:list:*${slug ? ` + key: product:${slug}` : ''}`);
         const promises: Promise<any>[] = [
             this.redisService.delByPattern('products:list:*'),
         ];
@@ -92,6 +93,7 @@ export class ProductService implements OnModuleInit {
         }
 
         await Promise.all(promises);
+        this.logger.info(`✅ [CACHE INVALIDATE] Done — all stale product caches cleared`);
     }
 
     // ==========================================
