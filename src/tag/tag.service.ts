@@ -85,12 +85,22 @@ export class TagService implements OnModuleInit {
     async getAllTags(dto: GetTagsDto, isAdmin: boolean = false) {
         if (!isAdmin) {
             const cacheKey = this.buildTagListKey(dto);
-            const cached = await this.redisService.get<any>(cacheKey);
-            if (cached) return cached;
+            const start = Date.now();
 
+            const cached = await this.redisService.get<any>(cacheKey);
+            if (cached) {
+                this.logger.info(`✅ [CACHE HIT] GET /tags — ${Date.now() - start}ms (no DB query)`);
+                return cached;
+            }
+
+            this.logger.info(`❌ [CACHE MISS] GET /tags — fetching from DB...`);
+            const dbStart = Date.now();
             const result = await this._fetchAllTags(dto, false);
+            this.logger.info(`🗄️  [DB QUERY] GET /tags — ${Date.now() - dbStart}ms`);
+
             const ttl = this.redisService.getTTL('tags');
             await this.redisService.set(cacheKey, result, ttl);
+            this.logger.info(`💾 [CACHE SET] GET /tags (TTL: ${ttl}s)`);
             return result;
         }
 
