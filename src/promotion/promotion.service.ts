@@ -169,10 +169,16 @@ export class PromotionService implements OnModuleInit {
      */
     async getActivePromotions() {
         const cacheKey = PromotionService.ACTIVE_PROMOTIONS_KEY;
+        const start = Date.now();
 
         const cached = await this.redisService.get<any>(cacheKey);
-        if (cached) return cached;
+        if (cached) {
+            this.logger.info(`✅ [CACHE HIT] GET /promotions/active — ${Date.now() - start}ms (no DB query)`);
+            return cached;
+        }
 
+        this.logger.info(`❌ [CACHE MISS] GET /promotions/active — fetching from DB...`);
+        const dbStart = Date.now();
         const now = new Date();
 
         const promotions = await this.prisma.promotion.findMany({
@@ -185,19 +191,14 @@ export class PromotionService implements OnModuleInit {
             include: {
                 _count: {
                     select: {
-                        products: {
-                            where: {
-                                deletedAt: null,
-                                isActive: true,
-                            },
-                        },
+                        products: { where: { deletedAt: null, isActive: true } },
                     },
                 },
             },
-            orderBy: {
-                discount: 'desc',
-            },
+            orderBy: { discount: 'desc' },
         });
+
+        this.logger.info(`🗄️  [DB QUERY] GET /promotions/active — ${Date.now() - dbStart}ms`);
 
         const data = promotions.map((promotion) => ({
             id: promotion.id,
@@ -215,7 +216,7 @@ export class PromotionService implements OnModuleInit {
         const result = { data };
         const ttl = this.redisService.getTTL('promotions');
         await this.redisService.set(cacheKey, result, ttl);
-
+        this.logger.info(`💾 [CACHE SET] GET /promotions/active (TTL: ${ttl}s)`);
         return result;
     }
 

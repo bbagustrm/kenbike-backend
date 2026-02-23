@@ -85,19 +85,27 @@ export class CategoryService implements OnModuleInit {
      * Caching: Public calls only (isAdmin = false)
      */
     async getAllCategories(dto: GetCategoriesDto, isAdmin: boolean = false) {
-        // Only cache public requests
         if (!isAdmin) {
             const cacheKey = this.buildCategoryListKey(dto);
-            const cached = await this.redisService.get<any>(cacheKey);
-            if (cached) return cached;
+            const start = Date.now();
 
+            const cached = await this.redisService.get<any>(cacheKey);
+            if (cached) {
+                this.logger.info(`✅ [CACHE HIT] GET /categories — ${Date.now() - start}ms (no DB query)`);
+                return cached;
+            }
+
+            this.logger.info(`❌ [CACHE MISS] GET /categories — fetching from DB...`);
+            const dbStart = Date.now();
             const result = await this._fetchAllCategories(dto, false);
+            this.logger.info(`🗄️  [DB QUERY] GET /categories — ${Date.now() - dbStart}ms`);
+
             const ttl = this.redisService.getTTL('categories');
             await this.redisService.set(cacheKey, result, ttl);
+            this.logger.info(`💾 [CACHE SET] GET /categories (TTL: ${ttl}s)`);
             return result;
         }
 
-        // Admin: always fresh data
         return this._fetchAllCategories(dto, true);
     }
 

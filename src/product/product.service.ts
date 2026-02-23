@@ -106,12 +106,23 @@ export class ProductService implements OnModuleInit {
         // Only cache public (non-admin) requests
         if (!isAdmin) {
             const cacheKey = this.buildProductListKey(dto);
-            const cached = await this.redisService.get<any>(cacheKey);
-            if (cached) return cached;
+            const start = Date.now();
 
+            const cached = await this.redisService.get<any>(cacheKey);
+            if (cached) {
+                const duration = Date.now() - start;
+                this.logger.info(`✅ [CACHE HIT] GET /products (key: ${cacheKey}) — ${duration}ms (no DB query)`);
+                return cached;
+            }
+
+            this.logger.info(`❌ [CACHE MISS] GET /products (key: ${cacheKey}) — fetching from DB...`);
+            const dbStart = Date.now();
             const result = await this._fetchAllProducts(dto, false);
+            this.logger.info(`🗄️  [DB QUERY] GET /products — ${Date.now() - dbStart}ms`);
+
             const ttl = this.redisService.getTTL('product_list');
             await this.redisService.set(cacheKey, result, ttl);
+            this.logger.info(`💾 [CACHE SET] GET /products (TTL: ${ttl}s)`);
             return result;
         }
 
@@ -296,46 +307,39 @@ export class ProductService implements OnModuleInit {
      */
     async getProductBySlug(slug: string) {
         const cacheKey = this.buildProductDetailKey(slug);
-        const cached = await this.redisService.get<any>(cacheKey);
+        const start = Date.now();
 
+        const cached = await this.redisService.get<any>(cacheKey);
         if (cached) {
-            // Increment view count in background even on cache hit
+            const duration = Date.now() - start;
+            this.logger.info(`✅ [CACHE HIT] GET /products/${slug} — ${duration}ms (no DB query)`);
+            // increment view count tetap jalan
             this.prisma.product
                 .findUnique({ where: { slug, deletedAt: null, isActive: true }, select: { id: true } })
-                .then((p) => {
-                    if (p) this.incrementViewCount(p.id).catch(() => {});
-                })
+                .then((p) => { if (p) this.incrementViewCount(p.id).catch(() => {}); })
                 .catch(() => {});
             return cached;
         }
 
-        // Cache MISS: fetch from DB
+        this.logger.info(`❌ [CACHE MISS] GET /products/${slug} — fetching from DB...`);
+        const dbStart = Date.now();
+
         const product = await this.prisma.product.findUnique({
             where: { slug, deletedAt: null, isActive: true },
             include: {
                 category: true,
                 promotion: true,
-                tags: {
-                    include: { tag: true },
-                },
+                tags: { include: { tag: true } },
                 variants: {
                     where: { deletedAt: null, isActive: true },
                     include: { images: true },
                 },
-                images: {
-                    orderBy: { order: 'asc' },
-                },
+                images: { orderBy: { order: 'asc' } },
                 gallery: true,
                 reviews: {
                     include: {
                         user: {
-                            select: {
-                                id: true,
-                                username: true,
-                                firstName: true,
-                                lastName: true,
-                                profileImage: true,
-                            },
+                            select: { id: true, username: true, firstName: true, lastName: true, profileImage: true },
                         },
                         images: true,
                     },
@@ -345,11 +349,10 @@ export class ProductService implements OnModuleInit {
             },
         });
 
-        if (!product) {
-            throw new NotFoundException('Product not found');
-        }
+        if (!product) throw new NotFoundException('Product not found');
 
-        // Increment view count in background
+        this.logger.info(`🗄️  [DB QUERY] GET /products/${slug} — ${Date.now() - dbStart}ms`);
+
         this.incrementViewCount(product.id).catch((error) => {
             this.logger.error('Failed to increment view count', error);
         });
@@ -373,7 +376,7 @@ export class ProductService implements OnModuleInit {
 
         const ttl = this.redisService.getTTL('products');
         await this.redisService.set(cacheKey, result, ttl);
-
+        this.logger.info(`💾 [CACHE SET] GET /products/${slug} (TTL: ${ttl}s)`);
         return result;
     }
 
