@@ -22,7 +22,7 @@ import { DiscussionModule } from './discussion/discussion.module';
 import {ReviewModule} from "./review/review.module";
 import { NotificationModule } from './notification/notification.module';
 import { AnalyticsModule } from './analytics/analytics.module';
-import { ConfigModule } from '@nestjs/config';
+import {ConfigModule, ConfigService} from '@nestjs/config';
 import { RedisModule } from './common/redis/redis.module';
 import { HealthModule } from './health/health.module';
 
@@ -32,23 +32,30 @@ import { HealthModule } from './health/health.module';
     CommonModule,
     AuthModule,
     UserModule,
-    ThrottlerModule.forRoot([
-      {
-        name: 'short',
-        ttl: 1000,      // 1 detik
-        limit: 10,      // Max 10 requests per detik per IP
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const isLoadTest = config.get('`LOAD_TEST_MODE') === 'true';
+        const enabled = config.get('RATE_LIMIT_ENABLED') !== 'false';
+
+        // Saat load test atau disabled → limit sangat tinggi
+        if (isLoadTest || !enabled) {
+          return [{
+            name: 'loadtest',
+            ttl: 1000,
+            limit: 999999,
+          }];
+        }
+
+        // Production normal
+        return [
+          { name: 'short',  ttl: 1000,   limit: 10  },
+          { name: 'medium', ttl: 60000,  limit: 100 },
+          { name: 'long',   ttl: 900000, limit: 500 },
+        ];
       },
-      {
-        name: 'medium',
-        ttl: 60000,     // 1 menit (60 detik)
-        limit: 100,     // Max 100 requests per menit per IP
-      },
-      {
-        name: 'long',
-        ttl: 900000,    // 15 menit
-        limit: 500,     // Max 500 requests per 15 menit per IP
-      },
-    ]),
+    }),
     ProductModule,
     CategoryModule,
     TagModule,
