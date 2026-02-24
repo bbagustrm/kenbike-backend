@@ -36,7 +36,7 @@ import { HealthModule } from './health/health.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const isLoadTest = config.get('`LOAD_TEST_MODE') === 'true';
+        const isLoadTest = config.get('LOAD_TEST_MODE') === 'true';
         const enabled = config.get('RATE_LIMIT_ENABLED') !== 'false';
 
         // Saat load test atau disabled → limit sangat tinggi
