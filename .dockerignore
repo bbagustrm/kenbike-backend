@@ -36,7 +36,6 @@ Dockerfile*
 # Prisma
 prisma/*.db
 prisma/*.db-journal
-prisma/migrations/*/*.sql
 
 # Logs
 logs
