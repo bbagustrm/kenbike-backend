@@ -9,9 +9,10 @@ node_modules
 npm-debug.log
 yarn-error.log
 yarn.lock
-# Don't ignore package-lock.json - needed for npm ci
+# Don't ignore package-lock.json - needed for npm ci`
 
 # Environment files (will be passed via env_file in compose)
+.env
 .env.backup
 .env.local
 .env.*.local
