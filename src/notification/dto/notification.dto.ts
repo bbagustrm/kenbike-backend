@@ -16,6 +16,12 @@ export const NotificationTypeEnum = z.enum([
     'PROMOTION_ENDING',
     'STOCK_LOW',
     'STOCK_AVAILABLE',
+    'RETURN_REQUESTED',
+    'RETURN_APPROVED',
+    'RETURN_REJECTED',
+    'RETURN_ITEM_SENT',
+    'RETURN_RECEIVED',
+    'RETURN_REFUNDED',
 ]);
 
 export type NotificationTypeDto = z.infer<typeof NotificationTypeEnum>;

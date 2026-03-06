@@ -14,7 +14,6 @@ datasource db {
 // ENUMS
 // ============================================
 
-// Enum untuk Role
 enum Role {
   USER
   ADMIN
@@ -22,25 +21,45 @@ enum Role {
 }
 
 enum OrderStatus {
-  PENDING // Order created, waiting payment
-  PAID // Payment confirmed
-  PROCESSING // Admin processing order
-  SHIPPED // Order shipped
-  DELIVERED // Order delivered
-  COMPLETED // Order completed (after user confirmation or auto)
-  CANCELLED // Order cancelled
-  FAILED // Payment failed
+  PENDING
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  FAILED
 }
 
 enum PaymentMethod {
-  MIDTRANS_SNAP // Midtrans Snap (all methods)
-  PAYPAL // PayPal
-  MANUAL // Manual transfer (for admin)
+  MIDTRANS_SNAP
+  PAYPAL
+  MANUAL
 }
 
 enum ShippingType {
-  DOMESTIC // Biteship API (Indonesia)
-  INTERNATIONAL // Manual zone-based
+  DOMESTIC
+  INTERNATIONAL
+}
+
+// ✅ NEW: Return Status
+enum ReturnStatus {
+  REQUESTED    // User mengajukan retur
+  APPROVED     // Admin menyetujui
+  REJECTED     // Admin menolak
+  ITEM_SENT    // User konfirmasi sudah kirim barang
+  ITEM_RECEIVED // Admin konfirmasi barang diterima
+  REFUNDED     // Admin sudah transfer refund
+  CANCELLED    // User membatalkan request
+}
+
+// ✅ NEW: Return Reason
+enum ReturnReason {
+  DAMAGED_ITEM       // Barang rusak/cacat
+  WRONG_ITEM         // Barang tidak sesuai pesanan
+  NOT_AS_DESCRIBED   // Tidak sesuai deskripsi
+  MISSING_PARTS      // Aksesoris/bagian tidak lengkap
+  OTHER              // Lainnya
 }
 
 enum NotificationType {
@@ -57,6 +76,13 @@ enum NotificationType {
   PROMOTION_ENDING
   STOCK_LOW
   STOCK_AVAILABLE
+  // ✅ NEW: Return notifications
+  RETURN_REQUESTED   // Admin: ada retur baru
+  RETURN_APPROVED    // User: retur disetujui
+  RETURN_REJECTED    // User: retur ditolak
+  RETURN_ITEM_SENT   // Admin: user sudah kirim barang
+  RETURN_RECEIVED    // User: barang diterima admin
+  RETURN_REFUNDED    // User: refund sudah dikirim
 }
 
 // ============================================
@@ -72,8 +98,8 @@ model User {
   password    String? @db.VarChar(255)
   phoneNumber String? @map("phone_number") @db.VarChar(20)
 
-  provider   String? @default("local") @db.VarChar(20) // 'local' | 'google'
-  providerId String? @map("provider_id") @db.VarChar(255) // Google user ID
+  provider   String? @default("local") @db.VarChar(20)
+  providerId String? @map("provider_id") @db.VarChar(255)
 
   country    String  @default("ID") @db.VarChar(2)
   province   String? @db.VarChar(100)
@@ -100,14 +126,13 @@ model User {
   blacklistedTokens BlacklistedToken[]
   carts             Cart[]
   orders            Order[]
-
-  // Review & Discussion relations
   reviews           Review[]
   reviewReplies     ReviewReply[]
   discussions       Discussion[]
   discussionReplies DiscussionReply[]
   discussionLikes   DiscussionLike[]
   notification      Notification[]
+  returns           Return[] // ✅ NEW
 
   @@index([email])
   @@index([username])
@@ -119,7 +144,6 @@ model User {
   @@map("users")
 }
 
-// Model untuk menyimpan Refresh Token
 model RefreshToken {
   id        String   @id @default(uuid())
   token     String   @unique @db.VarChar(500)
@@ -127,7 +151,6 @@ model RefreshToken {
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
 
-  // Relation
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([token])
@@ -136,7 +159,6 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-// Model untuk menyimpan token yang di-blacklist (logout)
 model BlacklistedToken {
   id        String   @id @default(uuid())
   token     String   @unique @db.VarChar(500)
@@ -144,7 +166,6 @@ model BlacklistedToken {
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
 
-  // Relation
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([token])
@@ -152,7 +173,6 @@ model BlacklistedToken {
   @@map("blacklisted_tokens")
 }
 
-// Model untuk Password Reset Token
 model PasswordReset {
   id        String    @id @default(uuid())
   email     String    @db.VarChar(255)
@@ -162,7 +182,6 @@ model PasswordReset {
   usedAt    DateTime? @map("used_at")
   createdAt DateTime  @default(now()) @map("created_at")
 
-  // Relation
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([email])
@@ -175,31 +194,26 @@ model PasswordReset {
 // PRODUCT MODELS
 // ============================================
 
-// Model Product
 model Product {
   id            String  @id @default(uuid())
   name          String
-  slug          String  @unique // SEO-friendly URL
+  slug          String  @unique
   idDescription String? @map("id_description") @db.Text
   enDescription String? @map("en_description") @db.Text
   idPrice       Int     @map("id_price")
   enPrice       Float   @map("en_price")
 
-  // 📊 Hybrid analytics fields
   totalSold Int    @default(0) @map("total_sold")
   totalView Int    @default(0) @map("total_view")
   avgRating Float? @default(0.0) @map("avg_rating")
 
-  // 📦 Informasi pengiriman (buat integrasi Biteship)
-  weight Int? // gram
-  height Int? // cm
-  length Int? // cm
-  width  Int? // cm
+  weight Int?
+  height Int?
+  length Int?
+  width  Int?
 
-  // 💰 Tax & Pricing
-  taxRate Float? @default(0.0) @map("tax_rate") // e.g. 0.11 for 11% PPN
+  taxRate Float? @default(0.0) @map("tax_rate")
 
-  // 🔗 Relationships
   categoryId String?   @map("category_id")
   category   Category? @relation(fields: [categoryId], references: [id])
 
@@ -212,17 +226,14 @@ model Product {
   gallery    GalleryImage[]
   cartItems  CartItem[]
   orderItems OrderItem[]
-
-  // Review & Discussion relations
-  reviews     Review[]
+  reviews    Review[]
   discussions Discussion[]
 
-  // ⚙️ Status & Features
   isActive     Boolean   @default(true) @map("is_active")
-  isFeatured   Boolean   @default(false) @map("is_featured") // Show on homepage
+  isFeatured   Boolean   @default(false) @map("is_featured")
   isPreOrder   Boolean   @default(false) @map("is_pre_order")
-  preOrderDays Int?      @default(0) @map("pre_order_days") // Berapa hari pre-order
-  deletedAt    DateTime? @map("deleted_at") // Soft delete
+  preOrderDays Int?      @default(0) @map("pre_order_days")
+  deletedAt    DateTime? @map("deleted_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -240,7 +251,7 @@ model ProductImage {
   id        String @id @default(uuid())
   productId String @map("product_id")
   imageUrl  String @map("image_url") @db.VarChar(500)
-  order     Int    @default(0) // untuk urutan gambar (0 = primary)
+  order     Int    @default(0)
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
@@ -263,11 +274,10 @@ model GalleryImage {
   @@map("gallery_images")
 }
 
-// Model ProductVariant
 model ProductVariant {
   id          String @id @default(uuid())
   productId   String @map("product_id")
-  variantName String @map("variant_name") // misal: "Black L", "White XL"
+  variantName String @map("variant_name")
   sku         String @unique
   stock       Int    @default(0) @map("stock")
 
@@ -276,9 +286,8 @@ model ProductVariant {
   cartItems  CartItem[]
   orderItems OrderItem[]
 
-  // ⚙️ Status
   isActive  Boolean   @default(true) @map("is_active")
-  deletedAt DateTime? @map("deleted_at") // Soft delete
+  deletedAt DateTime? @map("deleted_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -289,7 +298,6 @@ model ProductVariant {
   @@map("product_variants")
 }
 
-// Model ProductVariantImage
 model ProductVariantImage {
   id        String @id @default(uuid())
   variantId String @map("variant_id")
@@ -301,14 +309,13 @@ model ProductVariantImage {
   @@map("product_variant_images")
 }
 
-// Model Category
 model Category {
   id        String    @id @default(uuid())
   name      String
-  slug      String    @unique // SEO-friendly URL
+  slug      String    @unique
   isActive  Boolean   @default(true) @map("is_active")
   products  Product[]
-  deletedAt DateTime? @map("deleted_at") // Soft delete
+  deletedAt DateTime? @map("deleted_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -319,16 +326,15 @@ model Category {
   @@map("categories")
 }
 
-// Model Promotion
 model Promotion {
   id        String    @id @default(uuid())
   name      String
-  discount  Float // e.g. 0.15 for 15% off
+  discount  Float
   startDate DateTime  @map("start_date")
   endDate   DateTime  @map("end_date")
   isActive  Boolean   @default(true) @map("is_active")
   products  Product[]
-  deletedAt DateTime? @map("deleted_at") // Soft delete
+  deletedAt DateTime? @map("deleted_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -339,14 +345,13 @@ model Promotion {
   @@map("promotions")
 }
 
-// Model Tag
 model Tag {
   id        String       @id @default(uuid())
   name      String       @unique
-  slug      String       @unique // SEO-friendly URL
+  slug      String       @unique
   isActive  Boolean      @default(true) @map("is_active")
   products  ProductTag[]
-  deletedAt DateTime?    @map("deleted_at") // Soft delete
+  deletedAt DateTime?    @map("deleted_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -357,7 +362,6 @@ model Tag {
   @@map("tags")
 }
 
-// Junction Table: Product <-> Tag (Many-to-Many)
 model ProductTag {
   productId String
   tagId     String
@@ -375,27 +379,26 @@ model ProductTag {
 // REVIEW & DISCUSSION MODELS
 // ============================================
 
-// Model Review (Updated)
 model Review {
   id         String  @id @default(uuid())
   userId     String  @map("user_id")
   productId  String  @map("product_id")
-  orderId    String  @map("order_id") // Link to order for verified purchase
-  rating     Int     @default(0) // 1-5
+  orderId    String  @map("order_id")
+  rating     Int     @default(0)
   comment    String? @db.Text
-  isVerified Boolean @default(true) @map("is_verified") // Verified purchase badge
+  isVerified Boolean @default(true) @map("is_verified")
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  replies ReviewReply[] // Admin replies
+  replies ReviewReply[]
   images  ReviewImage[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@unique([userId, productId, orderId]) // Prevent duplicate review per product per order
+  @@unique([userId, productId, orderId])
   @@index([productId])
   @@index([userId])
   @@index([orderId])
@@ -403,7 +406,6 @@ model Review {
   @@map("reviews")
 }
 
-// Model ReviewImage
 model ReviewImage {
   id       String @id @default(uuid())
   reviewId String @map("review_id")
@@ -415,11 +417,10 @@ model ReviewImage {
   @@map("review_images")
 }
 
-// Model ReviewReply (Admin only can reply)
 model ReviewReply {
   id       String @id @default(uuid())
   reviewId String @map("review_id")
-  userId   String @map("user_id") // Admin/Owner who replied
+  userId   String @map("user_id")
   content  String @db.Text
 
   review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
@@ -433,7 +434,6 @@ model ReviewReply {
   @@map("review_replies")
 }
 
-// Model Discussion (Q&A - All users can ask)
 model Discussion {
   id        String @id @default(uuid())
   userId    String @map("user_id")
@@ -455,7 +455,6 @@ model Discussion {
   @@map("discussions")
 }
 
-// Model DiscussionReply (All users can reply)
 model DiscussionReply {
   id           String @id @default(uuid())
   discussionId String @map("discussion_id")
@@ -476,7 +475,6 @@ model DiscussionReply {
   @@map("discussion_replies")
 }
 
-// Model DiscussionLike (Like for question & reply)
 model DiscussionLike {
   id                String  @id @default(uuid())
   userId            String  @map("user_id")
@@ -529,7 +527,7 @@ model CartItem {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@unique([cartId, variantId]) // Prevent duplicate variants in same cart
+  @@unique([cartId, variantId])
   @@index([cartId])
   @@index([productId])
   @@index([variantId])
@@ -540,56 +538,47 @@ model CartItem {
 // ORDER & SHIPPING MODELS
 // ============================================
 
-// Order Model
 model Order {
   id            String  @id @default(uuid())
-  orderNumber   String  @unique @map("order_number") // ORD-YYYYMMDD-XXXX
-  invoiceNumber String? @unique @map("invoice_number") // INV-20250001 (generated when PAID)
+  orderNumber   String  @unique @map("order_number")
+  invoiceNumber String? @unique @map("invoice_number")
   userId        String  @map("user_id")
 
-  // Order Status
   status OrderStatus @default(PENDING)
 
-  subtotal     Float // Total harga items sebelum discount
-  discount     Float @default(0) // Discount dari promotion/voucher
-  tax          Float // PPN 11%
+  subtotal     Float
+  discount     Float @default(0)
+  tax          Float
   shippingCost Float @map("shipping_cost")
-  total        Float // Grand total
+  total        Float
 
-  // Currency & Exchange Rate
-  currency     String @default("IDR") // IDR atau USD
-  exchangeRate Float? @map("exchange_rate") // Rate saat order dibuat (untuk USD)
+  currency     String @default("IDR")
+  exchangeRate Float? @map("exchange_rate")
 
-  // Payment Info
   paymentMethod   PaymentMethod? @map("payment_method")
-  paymentProvider String?        @map("payment_provider") // "midtrans", "paypal"
-  paymentId       String?        @map("payment_id") // Transaction ID dari provider
+  paymentProvider String?        @map("payment_provider")
+  paymentId       String?        @map("payment_id")
 
-  // Shipping Info
   shippingType   ShippingType @map("shipping_type")
-  shippingMethod String       @map("shipping_method") // e.g., "JNE REG", "Zone 1"
+  shippingMethod String       @map("shipping_method")
 
-  // Biteship fields (for domestic)
-  biteshipCourier String? @map("biteship_courier") // "jne", "tiki", etc.
-  biteshipService String? @map("biteship_service") // "reg", "yes", etc.
-  biteshipOrderId String? @unique @map("biteship_order_id") // Biteship order ID
-  trackingNumber  String? @unique @map("tracking_number") // AWB/tracking number
+  biteshipCourier String? @map("biteship_courier")
+  biteshipService String? @map("biteship_service")
+  biteshipOrderId String? @unique @map("biteship_order_id")
+  trackingNumber  String? @unique @map("tracking_number")
 
-  // International shipping
   shippingZoneId String?       @map("shipping_zone_id")
   shippingZone   ShippingZone? @relation(fields: [shippingZoneId], references: [id])
 
-  // Recipient Details
   recipientName      String  @map("recipient_name")
   recipientPhone     String  @map("recipient_phone")
   shippingAddress    String  @map("shipping_address")
   shippingCity       String  @map("shipping_city")
-  shippingProvince   String? @map("shipping_province") // For domestic
+  shippingProvince   String? @map("shipping_province")
   shippingCountry    String  @map("shipping_country")
   shippingPostalCode String  @map("shipping_postal_code")
   shippingNotes      String? @map("shipping_notes")
 
-  // Timestamps
   paidAt      DateTime? @map("paid_at")
   shippedAt   DateTime? @map("shipped_at")
   deliveredAt DateTime? @map("delivered_at")
@@ -598,10 +587,10 @@ model Order {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  // Relations
   user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   items   OrderItem[]
-  reviews Review[] // Reviews linked to this order
+  reviews Review[]
+  returns Return[]
 
   @@index([userId])
   @@index([orderNumber])
@@ -610,30 +599,25 @@ model Order {
   @@map("orders")
 }
 
-// Order Item Model
 model OrderItem {
   id        String  @id @default(uuid())
   orderId   String  @map("order_id")
   productId String? @map("product_id")
   variantId String? @map("variant_id")
 
-  // Snapshot data (untuk history, case product/variant dihapus)
-  productName String @map("product_name")
-  variantName String @map("variant_name")
-  sku         String
-  quantity    Int
+  productName  String @map("product_name")
+  variantName  String @map("variant_name")
+  sku          String
+  quantity     Int
 
-  // Pricing - Changed from Int to Float for USD support
-  pricePerItem Float @map("price_per_item") // Harga per item saat order
-  discount     Float @default(0) // Discount per item dari promotion
-  subtotal     Float // (pricePerItem - discount) * quantity
+  pricePerItem Float @map("price_per_item")
+  discount     Float @default(0)
+  subtotal     Float
 
-  // Image snapshot
   productImage String? @map("product_image")
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  // Relations
   order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product?        @relation(fields: [productId], references: [id])
   variant ProductVariant? @relation(fields: [variantId], references: [id])
@@ -644,17 +628,14 @@ model OrderItem {
   @@map("order_items")
 }
 
-// Shipping Zone Model (for international shipping)
 model ShippingZone {
   id        String   @id @default(uuid())
-  name      String   @unique // e.g., "Zone 1 - Asia", "Zone 2 - Europe"
-  countries String[] // Array of country codes: ["SG", "MY", "TH"]
+  name      String   @unique
+  countries String[]
 
-  // Pricing in USD
-  baseRate  Float @map("base_rate") // Base shipping fee in USD (e.g., 15.00)
-  perKgRate Float @map("per_kg_rate") // Additional per kg in USD (e.g., 5.00)
+  baseRate  Float @map("base_rate")
+  perKgRate Float @map("per_kg_rate")
 
-  // Delivery estimate
   minDays Int @map("min_days")
   maxDays Int @map("max_days")
 
@@ -662,11 +643,87 @@ model ShippingZone {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // Relations
   orders Order[]
 
   @@map("shipping_zones")
 }
+
+// ============================================
+// RETURN MODEL
+// ============================================
+
+model Return {
+  id      String @id @default(uuid())
+  orderId String @map("order_id")
+  userId  String @map("user_id")
+
+  // Status & Alasan
+  status ReturnStatus @default(REQUESTED)
+  reason ReturnReason
+  description String  @db.Text
+
+  // Info Rekening untuk Refund (diisi user saat request)
+  refundBankName      String  @map("refund_bank_name") @db.VarChar(100)
+  refundAccountNumber String  @map("refund_account_number") @db.VarChar(50)
+  refundAccountName   String  @map("refund_account_name") @db.VarChar(100)
+
+  // Info Pengiriman Barang Retur (diisi user setelah approved)
+  returnCourier       String? @map("return_courier") @db.VarChar(50)   // JNE, J&T, dll
+  returnTrackingNumber String? @map("return_tracking_number") @db.VarChar(100)
+  itemSentAt          DateTime? @map("item_sent_at")
+
+  // Admin Fields
+  adminNotes   String?   @map("admin_notes") @db.Text
+  reviewedAt   DateTime? @map("reviewed_at")
+  reviewedBy   String?   @map("reviewed_by") @db.VarChar(255) // Email/name admin
+
+  // Konfirmasi Barang Diterima Admin
+  receivedNotes String?   @map("received_notes") @db.Text
+  receivedAt    DateTime? @map("received_at")
+  receivedBy    String?   @map("received_by") @db.VarChar(255)
+
+  // Refund Info (diisi admin setelah transfer)
+  refundAmount  Float?    @map("refund_amount")  // = order.total (full refund)
+  refundMethod  String?   @map("refund_method") @db.VarChar(100) // "transfer_bank", "gopay", dll
+  refundProof   String?   @map("refund_proof") @db.VarChar(500)  // URL bukti transfer
+  refundNotes   String?   @map("refund_notes") @db.Text
+  refundedAt    DateTime? @map("refunded_at")
+  refundedBy    String?   @map("refunded_by") @db.VarChar(255)
+
+  // Jika dibatalkan
+  cancelReason  String?   @map("cancel_reason") @db.Text
+  cancelledAt   DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  order  Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images ReturnImage[]
+
+  @@unique([orderId]) // 1 order hanya bisa punya 1 return request aktif
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("returns")
+}
+
+model ReturnImage {
+  id       String @id @default(uuid())
+  returnId String @map("return_id")
+  imageUrl String @map("image_url") @db.VarChar(500)
+
+  return Return @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([returnId])
+  @@map("return_images")
+}
+
+// ============================================
+// NOTIFICATION MODEL
+// ============================================
 
 model Notification {
   id        String           @id @default(uuid())
@@ -674,9 +731,9 @@ model Notification {
   type      NotificationType
   title     String           @db.VarChar(255)
   message   String           @db.Text
-  data      Json? // Store related IDs: { orderId, orderNumber, productId, reviewId, etc }
-  imageUrl  String?          @map("image_url") @db.VarChar(500) // Product/order image
-  actionUrl String?          @map("action_url") @db.VarChar(500) // Link to navigate
+  data      Json?
+  imageUrl  String?          @map("image_url") @db.VarChar(500)
+  actionUrl String?          @map("action_url") @db.VarChar(500)
   isRead    Boolean          @default(false) @map("is_read")
   readAt    DateTime?        @map("read_at")
   createdAt DateTime         @default(now()) @map("created_at")

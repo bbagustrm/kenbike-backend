@@ -520,4 +520,176 @@ export class NotificationService {
 
         return result;
     }
+
+    // ============================================
+// RETURN NOTIFICATION HELPERS
+// ============================================
+
+    /**
+     * Notify user or admin about return status change
+     * target: 'user' = notify the customer
+     *         'admin' = notify all admins (used internally via notifyReturnToAdmins)
+     */
+    async notifyReturnStatusChange(
+        userId: string,
+        orderNumber: string,
+        returnId: string,
+        status: string,
+        target: 'user',
+        locale: 'id' | 'en' = 'id',
+    ) {
+        const messages = this.getReturnStatusMessages(status, orderNumber, locale);
+        if (!messages) return null;
+
+        const typeMap: Record<string, string> = {
+            REQUESTED: 'RETURN_REQUESTED',
+            APPROVED: 'RETURN_APPROVED',
+            REJECTED: 'RETURN_REJECTED',
+            ITEM_SENT: 'RETURN_ITEM_SENT',
+            ITEM_RECEIVED: 'RETURN_RECEIVED',
+            REFUNDED: 'RETURN_REFUNDED',
+        };
+
+        const notificationType = typeMap[status];
+        if (!notificationType) return null;
+
+        return this.createNotification({
+            userId,
+            type: notificationType as any,
+            title: messages.title,
+            message: messages.message,
+            data: { returnId, orderNumber, status },
+            actionUrl: `/user/orders/${orderNumber}`,
+        });
+    }
+
+    /**
+     * Notify all admins about new return or item sent
+     */
+    async notifyReturnToAdmins(
+        orderNumber: string,
+        returnId: string,
+        eventType: string,
+    ) {
+        const admins = await this.prisma.user.findMany({
+            where: {
+                role: { in: ['ADMIN', 'OWNER'] },
+                isActive: true,
+                deletedAt: null,
+            },
+            select: { id: true },
+        });
+
+        if (admins.length === 0) return null;
+
+        let title: string;
+        let message: string;
+        let notificationType: string;
+
+        if (eventType === 'ITEM_SENT') {
+            title = '📦 Barang Retur Dikirim';
+            message = `User telah mengirim barang retur untuk pesanan ${orderNumber}. Silakan konfirmasi saat barang diterima.`;
+            notificationType = 'RETURN_ITEM_SENT';
+        } else {
+            // New return request
+            title = '🔄 Permintaan Retur Baru';
+            message = `Ada permintaan retur baru untuk pesanan ${orderNumber}. Alasan: ${eventType}. Segera review dan tindaklanjuti.`;
+            notificationType = 'RETURN_REQUESTED';
+        }
+
+        return this.createBulkNotifications({
+            userIds: admins.map((a) => a.id),
+            type: notificationType as any,
+            title,
+            message,
+            data: { returnId, orderNumber },
+            actionUrl: `/admin/returns/${returnId}`,
+        });
+    }
+
+    /**
+     * Notify user when refund has been processed
+     */
+    async notifyReturnRefunded(
+        userId: string,
+        orderNumber: string,
+        returnId: string,
+        refundAmount: number,
+        currency: string,
+        refundMethod: string,
+        locale: 'id' | 'en' = 'id',
+    ) {
+        const formattedAmount = currency === 'USD'
+            ? `USD ${refundAmount.toFixed(2)}`
+            : `Rp ${refundAmount.toLocaleString('id-ID')}`;
+
+        const messages = {
+            id: {
+                title: '💰 Refund Berhasil Dikirim',
+                message: `Refund sebesar ${formattedAmount} untuk pesanan ${orderNumber} telah dikirim via ${refundMethod}. Cek halaman retur untuk bukti transfer.`,
+            },
+            en: {
+                title: '💰 Refund Sent',
+                message: `Refund of ${formattedAmount} for order ${orderNumber} has been sent via ${refundMethod}. Check the return page for proof of transfer.`,
+            },
+        };
+
+        return this.createNotification({
+            userId,
+            type: 'RETURN_REFUNDED' as any,
+            title: messages[locale].title,
+            message: messages[locale].message,
+            data: { returnId, orderNumber, refundAmount, currency, refundMethod },
+            actionUrl: `/user/orders/${orderNumber}`,
+        });
+    }
+
+    private getReturnStatusMessages(
+        status: string,
+        orderNumber: string,
+        locale: 'id' | 'en',
+    ): { title: string; message: string } | null {
+        const messages: Record<string, Record<string, { title: string; message: string } | null>> = {
+            id: {
+                REQUESTED: {
+                    title: '🔄 Permintaan Retur Diterima',
+                    message: `Permintaan retur untuk pesanan ${orderNumber} telah diterima. Kami akan mereview dalam 1-2 hari kerja.`,
+                },
+                APPROVED: {
+                    title: '✅ Retur Disetujui',
+                    message: `Retur untuk pesanan ${orderNumber} disetujui! Silakan kirim barang ke alamat toko. Hubungi kami via WhatsApp untuk info pengiriman.`,
+                },
+                REJECTED: {
+                    title: '❌ Retur Ditolak',
+                    message: `Mohon maaf, permintaan retur untuk pesanan ${orderNumber} tidak dapat diproses. Lihat alasan penolakan di halaman pesanan.`,
+                },
+                ITEM_RECEIVED: {
+                    title: '📦 Barang Diterima',
+                    message: `Barang retur untuk pesanan ${orderNumber} telah kami terima dan sedang diperiksa. Refund akan diproses segera.`,
+                },
+                REFUNDED: null, // handled by notifyReturnRefunded
+            },
+            en: {
+                REQUESTED: {
+                    title: '🔄 Return Request Received',
+                    message: `Your return request for order ${orderNumber} has been received. We will review it within 1-2 business days.`,
+                },
+                APPROVED: {
+                    title: '✅ Return Approved',
+                    message: `Your return for order ${orderNumber} has been approved! Please ship the item back to our store. Contact us via WhatsApp for shipping details.`,
+                },
+                REJECTED: {
+                    title: '❌ Return Rejected',
+                    message: `We're sorry, your return request for order ${orderNumber} could not be processed. See the reason on the order page.`,
+                },
+                ITEM_RECEIVED: {
+                    title: '📦 Item Received',
+                    message: `We have received your return item for order ${orderNumber} and are inspecting it. Refund will be processed shortly.`,
+                },
+                REFUNDED: null,
+            },
+        };
+
+        return messages[locale]?.[status] || messages['en']?.[status] || null;
+    }
 }

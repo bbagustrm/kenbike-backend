@@ -25,6 +25,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import {ConfigModule, ConfigService} from '@nestjs/config';
 import { RedisModule } from './common/redis/redis.module';
 import { HealthModule } from './health/health.module';
+import { ReturnModule } from './return/return.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { HealthModule } from './health/health.module';
     AnalyticsModule,
     RedisModule,
     HealthModule,
+    ReturnModule,
   ],
   controllers: [AppController, DiscussionController],
   providers: [
