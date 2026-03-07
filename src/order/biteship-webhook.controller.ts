@@ -4,23 +4,25 @@ import {
     Controller,
     Post,
     Get,
-    Body,
     Headers,
     HttpCode,
     HttpStatus,
     Inject,
+    Req,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
-import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { BiteshipWebhookService } from './biteship-webhook.service';
 import { BiteshipService } from './biteship.service';
+import { Request } from 'express';
 import * as crypto from 'crypto';
 
 @Controller('webhooks/biteship')
 @Public()
+@SkipThrottle()
 export class BiteshipWebhookController {
     constructor(
         private biteshipWebhookService: BiteshipWebhookService,
@@ -31,7 +33,6 @@ export class BiteshipWebhookController {
 
     @Get('health')
     @HttpCode(HttpStatus.OK)
-    @SkipThrottle()
     healthCheck() {
         return {
             status: 'ok',
@@ -43,16 +44,25 @@ export class BiteshipWebhookController {
 
     @Post()
     @HttpCode(HttpStatus.OK)
-    @Throttle({ short: { limit: 10, ttl: 1000 } })
-    @Throttle({ medium: { limit: 60, ttl: 60000 } })
     async handleWebhook(
+        @Req() req: Request,
         @Headers() headers: Record<string, string>,
-        @Body() payload: any,
     ) {
+        // ✅ Pakai req.body langsung dan fallback ke {} kalau kosong
+        // Biteship kirim empty body saat installation test yang menyebabkan
+        // JSON parser NestJS throw error sebelum masuk controller
+        const payload = req.body && Object.keys(req.body).length > 0 ? req.body : {};
+
+        // ✅ Empty body = Biteship installation test ping
+        if (Object.keys(payload).length === 0) {
+            this.logger.info('📦 Biteship webhook: installation test ping');
+            return { status: 'ok', message: 'Webhook endpoint ready' };
+        }
+
         // Validate payload size
         if (JSON.stringify(payload).length > 50000) {
             this.logger.warn('⚠️ Biteship webhook payload too large');
-            return { status: 'error', message: 'Payload too large' };
+            return { status: 'ok', message: 'Payload too large' };
         }
 
         this.logger.info('📦 Biteship webhook received', {
@@ -64,7 +74,7 @@ export class BiteshipWebhookController {
         });
 
         try {
-            // Optional: validate Biteship signature if secret is configured
+            // Optional: validate signature kalau BITESHIP_WEBHOOK_SECRET di-set
             const webhookSecret = this.configService.get<string>('BITESHIP_WEBHOOK_SECRET');
             if (webhookSecret) {
                 const signature = headers['x-biteship-signature'] || headers['x-api-key'];
@@ -72,7 +82,7 @@ export class BiteshipWebhookController {
                     this.logger.warn('⚠️ Invalid Biteship webhook signature', {
                         orderId: payload.order_id,
                     });
-                    return { status: 'error', message: 'Invalid signature' };
+                    return { status: 'ok', message: 'Invalid signature' };
                 }
             }
 
@@ -89,7 +99,7 @@ export class BiteshipWebhookController {
                 payload,
             });
 
-            // Always return 200 to Biteship to prevent retries for internal errors
+            // Selalu return 200 agar Biteship tidak retry
             return {
                 status: 'ok',
                 message: 'Webhook received',
