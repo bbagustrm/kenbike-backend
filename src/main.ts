@@ -36,10 +36,19 @@ async function bootstrap() {
   // ⚠️ Trust Cloudflare proxy untuk mendapatkan real IP
   app.set('trust proxy', true);
 
-  // ✅ Biteship webhook - handle empty body SEBELUM global bodyParser
-  // Biteship mengirim empty body saat installation test
-  // bodyParser.json() global akan throw error kalau body kosong
+  // ✅ Biteship webhook - intercept di Express level sebelum NestJS
+  // Kalau body kosong (installation test), langsung respond 200 tanpa lewat NestJS
+  // Kalau ada body, parse manual dan set req._body = true agar bodyParser skip
   app.use('/api/v1/webhooks/biteship', (req: any, res: any, next: any) => {
+    const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+
+    // Body kosong = Biteship installation test → respond langsung
+    if (contentLength === 0 || !req.headers['content-length']) {
+      res.status(200).json({ status: 'ok', message: 'Webhook endpoint ready' });
+      return;
+    }
+
+    // Ada body → baca dan parse manual
     let raw = '';
     req.on('data', (chunk: any) => { raw += chunk; });
     req.on('end', () => {
@@ -48,6 +57,7 @@ async function bootstrap() {
       } catch {
         req.body = {};
       }
+      req._body = true; // Beritahu bodyParser global untuk skip
       next();
     });
   });
