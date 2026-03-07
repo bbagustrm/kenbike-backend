@@ -62,11 +62,7 @@ async function bootstrap() {
       res.status(200).json({ status: 'ok' });
     });
   });
-  // ════════════════════════════════════════════════════════════════
-  // End Biteship webhook handler
-  // ════════════════════════════════════════════════════════════════
 
-  // ✅ Compression middleware
   app.use(compression({
     filter: (req, res) => {
       if (req.headers['x-no-compression']) {
@@ -171,7 +167,6 @@ async function bootstrap() {
 
   await app.listen(3000, '0.0.0.0');
 
-  // ✅ Startup logs
   const cacheEnabled   = process.env.ENABLE_CACHE === 'true';
   const loadTestMode   = process.env.LOAD_TEST_MODE === 'true';
   const rateLimit      = process.env.RATE_LIMIT_REQUESTS ?? '100';
