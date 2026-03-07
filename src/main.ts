@@ -36,6 +36,22 @@ async function bootstrap() {
   // ⚠️ Trust Cloudflare proxy untuk mendapatkan real IP
   app.set('trust proxy', true);
 
+  // ✅ Biteship webhook - handle empty body SEBELUM global bodyParser
+  // Biteship mengirim empty body saat installation test
+  // bodyParser.json() global akan throw error kalau body kosong
+  app.use('/api/v1/webhooks/biteship', (req: any, res: any, next: any) => {
+    let raw = '';
+    req.on('data', (chunk: any) => { raw += chunk; });
+    req.on('end', () => {
+      try {
+        req.body = raw && raw.trim() ? JSON.parse(raw) : {};
+      } catch {
+        req.body = {};
+      }
+      next();
+    });
+  });
+
   // ✅ Payload size limits
   app.use(bodyParser.json({
     limit: '1mb',
