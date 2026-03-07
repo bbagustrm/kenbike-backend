@@ -14,6 +14,58 @@ async function bootstrap() {
   const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
   app.useLogger(logger);
 
+
+  app.use('/api/v1/webhooks/biteship', (req: any, res: any, next: any) => {
+    logger.log('info', '🔍 [BITESHIP] Incoming request', {
+      method:        req.method,
+      url:           req.url,
+      contentType:   req.headers['content-type']   ?? '(none)',
+      contentLength: req.headers['content-length'] ?? '(none)',
+      userAgent:     req.headers['user-agent']     ?? '(none)',
+      xForwardedFor: req.headers['x-forwarded-for'] ?? '(none)',
+      allHeaders:    JSON.stringify(req.headers),
+      timestamp:     new Date().toISOString(),
+    });
+
+    const contentLength = parseInt(req.headers['content-length'] ?? '-1', 10);
+    const hasBody = contentLength > 0;
+
+    if (!hasBody || req.method !== 'POST') {
+      logger.log('info', `🔍 [BITESHIP] Installation test detected (method=${req.method}, contentLength=${contentLength})`);
+      res.status(200).json({ status: 'ok' });
+      return;
+    }
+
+    let chunks: Buffer[] = [];
+
+    req.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => {
+      try {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        logger.log('info', '🔍 [BITESHIP] Raw body received', { raw, length: raw.length });
+
+        req.body   = raw && raw.trim() ? JSON.parse(raw) : {};
+        req._body  = true;
+      } catch (err: any) {
+        logger.warn('⚠️ [BITESHIP] Failed to parse body', { error: err.message });
+        req.body  = {};
+        req._body = true;
+      }
+      next();
+    });
+
+    req.on('error', (err: any) => {
+      logger.error('❌ [BITESHIP] Stream error', { error: err.message });
+      res.status(200).json({ status: 'ok' });
+    });
+  });
+  // ════════════════════════════════════════════════════════════════
+  // End Biteship webhook handler
+  // ════════════════════════════════════════════════════════════════
+
   // ✅ Compression middleware
   app.use(compression({
     filter: (req, res) => {
@@ -35,32 +87,6 @@ async function bootstrap() {
 
   // ⚠️ Trust Cloudflare proxy untuk mendapatkan real IP
   app.set('trust proxy', true);
-
-  // ✅ Biteship webhook - intercept di Express level sebelum NestJS
-  // Kalau body kosong (installation test), langsung respond 200 tanpa lewat NestJS
-  // Kalau ada body, parse manual dan set req._body = true agar bodyParser skip
-  app.use('/api/v1/webhooks/biteship', (req: any, res: any, next: any) => {
-    const contentLength = parseInt(req.headers['content-length'] || '0', 10);
-
-    // Body kosong = Biteship installation test → respond langsung
-    if (contentLength === 0 || !req.headers['content-length']) {
-      res.status(200).json({ status: 'ok', message: 'Webhook endpoint ready' });
-      return;
-    }
-
-    // Ada body → baca dan parse manual
-    let raw = '';
-    req.on('data', (chunk: any) => { raw += chunk; });
-    req.on('end', () => {
-      try {
-        req.body = raw && raw.trim() ? JSON.parse(raw) : {};
-      } catch {
-        req.body = {};
-      }
-      req._body = true; // Beritahu bodyParser global untuk skip
-      next();
-    });
-  });
 
   // ✅ Payload size limits
   app.use(bodyParser.json({
@@ -145,7 +171,7 @@ async function bootstrap() {
 
   await app.listen(3000, '0.0.0.0');
 
-  // ✅ Accurate startup logs - reflect actual env values
+  // ✅ Startup logs
   const cacheEnabled   = process.env.ENABLE_CACHE === 'true';
   const loadTestMode   = process.env.LOAD_TEST_MODE === 'true';
   const rateLimit      = process.env.RATE_LIMIT_REQUESTS ?? '100';
@@ -171,6 +197,7 @@ async function bootstrap() {
   logger.log('info', '📦 Payload Limits:');
   logger.log('info', '   ├─ Default: 1MB');
   logger.log('info', '   └─ Upload: 10MB');
+  logger.log('info', '🔗 Biteship Webhook: /api/v1/webhooks/biteship');
   if (loadTestMode) {
     logger.log('info', '');
     logger.log('info', '⚠️  ====================================');
