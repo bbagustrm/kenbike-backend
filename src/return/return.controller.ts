@@ -9,8 +9,13 @@ import {
     Param,
     Query,
     UseGuards,
+    UseInterceptors,
+    UploadedFiles,
     Req,
+    BadRequestException,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ReturnService } from './return.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -38,9 +43,34 @@ export class ReturnController {
 
     @Post('returns')
     @UseGuards(JwtAuthGuard)
-    async createReturn(@Req() req: any, @Body() body: any) {
+    @UseInterceptors(
+        FilesInterceptor('images', 5, {
+            storage: memoryStorage(),
+            limits: { fileSize: 2 * 1024 * 1024 }, // 2MB per file
+            fileFilter: (_, file, cb) => {
+                const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+                if (allowed.includes(file.mimetype)) {
+                    cb(null, true);
+                } else {
+                    cb(new BadRequestException('Only JPEG, PNG, and WEBP images are allowed'), false);
+                }
+            },
+        }),
+    )
+    async createReturn(
+        @Req() req: any,
+        @Body() body: any,
+        @UploadedFiles() files: Express.Multer.File[],
+    ) {
+        if (!files || files.length === 0) {
+            throw new BadRequestException('At least 1 proof image is required');
+        }
+        if (files.length > 5) {
+            throw new BadRequestException('Maximum 5 images allowed');
+        }
+
         const dto = this.validationService.validate(CreateReturnSchema, body);
-        return this.returnService.createReturn(req.user.id, dto);
+        return this.returnService.createReturn(req.user.id, dto, files);
     }
 
     @Get('returns/my')

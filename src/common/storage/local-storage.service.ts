@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-export type StorageFolder = 'profiles' | 'products' | 'variants' | 'gallery' | 'reviews';
+export type StorageFolder = 'profiles' | 'products' | 'variants' | 'gallery' | 'reviews' | 'returns';
 
 @Injectable()
 export class LocalStorageService {
@@ -33,7 +33,7 @@ export class LocalStorageService {
     }
 
     private ensureUploadDir() {
-        const folders: StorageFolder[] = ['profiles', 'products', 'variants', 'gallery', 'reviews'];
+        const folders: StorageFolder[] = ['profiles', 'products', 'variants', 'gallery', 'reviews', 'returns'];
         const absoluteUploadDir = path.resolve(this.uploadDir);
 
         this.logger.info(`📂 Ensuring upload directory exists:`, {

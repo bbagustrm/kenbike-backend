@@ -12,6 +12,7 @@ import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { PrismaService } from '../common/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { EmailService } from '../common/email.service';
+import { LocalStorageService } from '../common/storage/local-storage.service';
 import { PaginationUtil } from '../utils/pagination.util';
 import { CreateReturnDto } from './dto/create-return.dto';
 import { ConfirmItemSentDto } from './dto/confirm-item-sent.dto';
@@ -30,6 +31,7 @@ export class ReturnService {
         private prisma: PrismaService,
         private notificationService: NotificationService,
         private emailService: EmailService,
+        private localStorageService: LocalStorageService, // ✅ added
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     ) {}
 
@@ -37,10 +39,15 @@ export class ReturnService {
     // USER METHODS
     // ============================================
 
-    async createReturn(userId: string, dto: CreateReturnDto) {
+    async createReturn(
+        userId: string,
+        dto: CreateReturnDto,
+        imageFiles: Express.Multer.File[], // ✅ files instead of URLs
+    ) {
         this.logger.info('📦 Creating return request', {
             userId,
             orderNumber: dto.order_number,
+            imageCount: imageFiles.length,
         });
 
         const order = await this.prisma.order.findUnique({
@@ -70,6 +77,7 @@ export class ReturnService {
 
         const existingReturn = await this.prisma.return.findUnique({
             where: { orderId: order.id },
+            include: { images: true },
         });
 
         if (existingReturn) {
@@ -83,8 +91,28 @@ export class ReturnService {
             }
         }
 
+        // ✅ Upload all images first (outside transaction)
+        const uploadedUrls: string[] = [];
+        for (const file of imageFiles) {
+            try {
+                const result = await this.localStorageService.uploadImage(file, 'returns');
+                uploadedUrls.push(result.url);
+            } catch (error: any) {
+                // Cleanup already-uploaded files if one fails
+                await this.localStorageService.deleteImages(uploadedUrls).catch(() => {});
+                throw new BadRequestException(`Failed to upload image: ${error.message}`);
+            }
+        }
+
         const returnRequest = await this.prisma.$transaction(async (tx) => {
+            // Delete old cancelled return if exists
             if (existingReturn) {
+                // Cleanup old images from storage
+                const oldUrls = existingReturn.images.map((img) => img.imageUrl);
+                await this.localStorageService.deleteImages(oldUrls).catch(() => {
+                    this.logger.warn('Failed to delete old return images from storage');
+                });
+
                 await tx.returnImage.deleteMany({ where: { returnId: existingReturn.id } });
                 await tx.return.delete({ where: { id: existingReturn.id } });
             }
@@ -101,14 +129,12 @@ export class ReturnService {
                 },
             });
 
-            if (dto.image_urls.length > 0) {
-                await tx.returnImage.createMany({
-                    data: dto.image_urls.map((url) => ({
-                        returnId: newReturn.id,
-                        imageUrl: url,
-                    })),
-                });
-            }
+            await tx.returnImage.createMany({
+                data: uploadedUrls.map((url) => ({
+                    returnId: newReturn.id,
+                    imageUrl: url,
+                })),
+            });
 
             return newReturn;
         });
@@ -139,6 +165,7 @@ export class ReturnService {
         this.logger.info('✅ Return request created', {
             returnId: returnRequest.id,
             orderNumber: dto.order_number,
+            uploadedImages: uploadedUrls.length,
         });
 
         return {

@@ -17,9 +17,6 @@ export const CreateReturnSchema = z.object({
     refund_bank_name: z.string().min(2).max(100),
     refund_account_number: z.string().min(5).max(50),
     refund_account_name: z.string().min(2).max(100),
-    image_urls: z.array(z.string().url())
-        .min(1, 'At least 1 photo is required')
-        .max(5, 'Maximum 5 photos allowed'),
 });
 
 export type CreateReturnDto = z.infer<typeof CreateReturnSchema>;
