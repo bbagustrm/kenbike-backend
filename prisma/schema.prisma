@@ -42,7 +42,7 @@ enum ShippingType {
   INTERNATIONAL
 }
 
-// ✅ NEW: Return Status
+// Return Status
 enum ReturnStatus {
   REQUESTED    // User mengajukan retur
   APPROVED     // Admin menyetujui
@@ -53,7 +53,7 @@ enum ReturnStatus {
   CANCELLED    // User membatalkan request
 }
 
-// ✅ NEW: Return Reason
+// Return Reason
 enum ReturnReason {
   DAMAGED_ITEM       // Barang rusak/cacat
   WRONG_ITEM         // Barang tidak sesuai pesanan
@@ -76,7 +76,7 @@ enum NotificationType {
   PROMOTION_ENDING
   STOCK_LOW
   STOCK_AVAILABLE
-  // ✅ NEW: Return notifications
+  // Return notifications
   RETURN_REQUESTED   // Admin: ada retur baru
   RETURN_APPROVED    // User: retur disetujui
   RETURN_REJECTED    // User: retur ditolak
@@ -132,7 +132,7 @@ model User {
   discussionReplies DiscussionReply[]
   discussionLikes   DiscussionLike[]
   notification      Notification[]
-  returns           Return[] // ✅ NEW
+  returns           Return[]
 
   @@index([email])
   @@index([username])
